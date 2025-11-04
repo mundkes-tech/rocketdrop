@@ -22,9 +22,9 @@ export function Navigation() {
 
   const navLinks = [
     { href: '/', label: 'Home' },
-    { href: '/products', label: 'All Products' },
-    { href: '/deals', label: 'Deals' },
     { href: '/about', label: 'About' },
+    { href: '/products', label: 'All Products' },
+    { href: '/myorders', label: 'Myorders' },
   ];
 
   return (
@@ -74,8 +74,14 @@ export function Navigation() {
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    logout();            // Clear localStorage/session/etc.
-                    router.push('/login'); // Redirect to login page
+                    // Immediately redirect before async context updates
+                    localStorage.removeItem("user");
+                    router.replace("/login");
+                    
+                    // Then trigger your actual logout logic
+                    setTimeout(() => {
+                      logout();
+                    }, 50);
                   }}
                 >
                   <LogOut className="h-6 w-6 text-red-600" />
