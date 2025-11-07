@@ -1,119 +1,93 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { categories } from '@/lib/mock-data';
-import { ProductCard } from '@/components/product-card';
-import { Sliders, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import useSWR from 'swr';
+import { Sliders, ChevronDown, X } from 'lucide-react';
 import { Button } from '@/components/button';
+import ProductCard from '@/components/product-card';
 import { toast } from 'react-hot-toast';
-import { triggerCartConfetti } from "@/utils/confetti";
-import { motion, useAnimation } from 'framer-motion';
+import { triggerCartConfetti } from '@/utils/confetti';
+import { motion, AnimatePresence, useAnimation } from 'framer-motion';
+import { Skeleton } from '@/components/skeleton';
+import { useSearchParams } from 'next/navigation';
+
+const fetcher = (url) => fetch(url).then((r) => r.json());
 
 export default function ProductsPage() {
-  const [allProducts, setAllProducts] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showFilters, setShowFilters] = useState(false);
-
-  // Filter states
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
   const [sortBy, setSortBy] = useState('featured');
+  const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
+  const [categories, setCategories] = useState([]);
 
-  // 🎯 For cart animation & bounce
-  const cartControls = useAnimation();
+  const searchParams = useSearchParams();
+  const searchQuery = searchParams.get('search') || '';
+  const limit = 8;
 
-  // ✅ Load products dynamically from DB
+  // ✅ Fetch categories
   useEffect(() => {
-    const fetchProducts = async () => {
+    async function fetchCategories() {
       try {
-        const res = await fetch('/api/products');
+        const res = await fetch('/api/categories');
         const data = await res.json();
-        setAllProducts(data);
-        setFilteredProducts(data);
-      } catch (error) {
-        console.error('Error fetching products:', error);
-      } finally {
-        setLoading(false);
+        setCategories(data.categories || []); // ✅ FIXED
+        console.log("📦 Categories fetched:", data.categories);
+      } catch (err) {
+        console.error('❌ Error loading categories:', err);
       }
-    };
-
-    fetchProducts();
+    }
+    fetchCategories();
   }, []);
 
-  // ✅ Apply filters & sorting
+
+  // ✅ Build query dynamically
+  const query = new URLSearchParams({
+    page: page.toString(),
+    limit: limit.toString(),
+    sort: sortBy,
+    minPrice: priceRange.min.toString(),
+    maxPrice: priceRange.max.toString(),
+    ...(searchQuery ? { search: searchQuery } : {}),
+    ...(selectedCategories.length === 1 ? { category: selectedCategories[0] } : {}),
+  }).toString();
+
+  const { data, error, isLoading } = useSWR(`/api/products?${query}`, fetcher);
+
   useEffect(() => {
-    let result = [...allProducts];
+    setPage(1);
+  }, [searchQuery]);
 
-    if (selectedCategories.length > 0) {
-      result = result.filter((product) =>
-        selectedCategories.includes(String(product.category_id))
-      );
-    }
+  const cartControls = useAnimation();
 
-    result = result.filter(
-      (product) =>
-        (product.discountPrice || product.price) >= priceRange.min &&
-        (product.discountPrice || product.price) <= priceRange.max
-    );
+  const filteredProducts = useMemo(() => {
+    if (!data?.products) return [];
+    return data.products;
+  }, [data?.products]);
 
-    switch (sortBy) {
-      case 'price-low':
-        result.sort((a, b) => (a.discountPrice || a.price) - (b.discountPrice || b.price));
-        break;
-      case 'price-high':
-        result.sort((a, b) => (b.discountPrice || b.price) - (a.discountPrice || a.price));
-        break;
-      case 'newest':
-        result.sort((a, b) => b.id - a.id);
-        break;
-      case 'rating':
-        result.sort((a, b) => b.rating - a.rating);
-        break;
-      default:
-        result.sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
-        break;
-    }
-
-    setFilteredProducts(result);
-  }, [allProducts, selectedCategories, priceRange, sortBy]);
-
-  // ✅ Add to Cart (LocalStorage + Confetti + Lottie + Bounce)
+  // ✅ Add to Cart
   const addToCart = async (product) => {
     const userData = JSON.parse(localStorage.getItem('user'));
-    if (!userData) {
-      toast.error('Please login to add products to cart');
-      return;
-    }
+    if (!userData) return toast.error('Please login to add products to cart');
 
-    const userCartKey = `cart_${userData.email}`;
-    const cart = JSON.parse(localStorage.getItem(userCartKey)) || [];
-
+    const cartKey = `cart_${userData.email}`;
+    const cart = JSON.parse(localStorage.getItem(cartKey)) || [];
     const index = cart.findIndex((item) => item.id === product.id);
-    if (index !== -1) {
-      cart[index].quantity += 1;
-    } else {
-      cart.push({ ...product, quantity: 1 });
-    }
 
-    localStorage.setItem(userCartKey, JSON.stringify(cart));
+    if (index !== -1) cart[index].quantity += 1;
+    else cart.push({ ...product, quantity: 1 });
 
-    // 🎉 Trigger confetti near top-right (cart icon area)
-    triggerCartConfetti(0.92, 0.08);
+    localStorage.setItem(cartKey, JSON.stringify(cart));
+    triggerCartConfetti(0.9, 0.1);
 
-    // 🛍️ Animate cart bounce effect
-    await cartControls.start({ scale: 1.4, transition: { duration: 0.15 } });
-    await cartControls.start({ scale: 1, transition: { type: "spring", stiffness: 200 } });
-
+    await cartControls.start({ scale: 1.2, transition: { duration: 0.15 } });
+    await cartControls.start({ scale: 1, transition: { type: 'spring', stiffness: 200 } });
     toast.success(`${product.name} added to your cart 🛒`);
   };
 
-  // ✅ Filter helpers
-  const toggleCategory = (categorySlug) => {
+  const toggleCategory = (slug) => {
     setSelectedCategories((prev) =>
-      prev.includes(categorySlug)
-        ? prev.filter((c) => c !== categorySlug)
-        : [...prev, categorySlug]
+      prev.includes(slug) ? prev.filter((c) => c !== slug) : [slug]
     );
   };
 
@@ -123,18 +97,18 @@ export default function ProductsPage() {
     setSortBy('featured');
   };
 
-  const toggleFilters = () => setShowFilters(!showFilters);
-
-  // ✅ Loading spinner
-  if (loading) {
+  if (isLoading)
     return (
-      <div className="flex justify-center items-center h-[70vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#004a7c]" />
+      <div className="container mx-auto px-4 py-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
+        {[...Array(8)].map((_, i) => (
+          <Skeleton key={i} className="h-64 rounded-2xl" />
+        ))}
       </div>
     );
-  }
 
-  // ✅ Main Layout
+  if (error)
+    return <p className="text-center text-red-500 mt-10">⚠️ Failed to load products.</p>;
+
   return (
     <div className="container mx-auto px-4 py-8 relative">
       {/* Header */}
@@ -142,7 +116,6 @@ export default function ProductsPage() {
         <h1 className="text-3xl font-bold text-[#004a7c]">All Products</h1>
 
         <div className="flex items-center gap-4">
-          {/* Sort Dropdown */}
           <div className="relative">
             <select
               value={sortBy}
@@ -153,12 +126,13 @@ export default function ProductsPage() {
               <option value="price-low">Price: Low to High</option>
               <option value="price-high">Price: High to Low</option>
               <option value="newest">Newest</option>
-              <option value="rating">Highest Rated</option>
+              <option value="trending">Trending</option>
             </select>
-            <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 pointer-events-none text-gray-500" />
+            <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
           </div>
 
-          <Button variant="outline" onClick={toggleFilters} className="flex items-center gap-2 md:hidden">
+          {/* Mobile Filters Button */}
+          <Button variant="outline" onClick={() => setShowFilters(true)} className="flex items-center gap-2 md:hidden">
             <Sliders className="h-4 w-4" />
             Filters
           </Button>
@@ -166,95 +140,161 @@ export default function ProductsPage() {
       </div>
 
       <div className="flex flex-col md:flex-row gap-8">
-        {/* Sidebar Filters (Desktop) */}
+        {/* Desktop Sidebar */}
         <aside className="hidden md:block w-64 flex-shrink-0">
-          <div className="bg-white p-6 rounded-lg shadow-md border">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="font-semibold">Filters</h2>
-              <button onClick={clearFilters} className="text-sm text-blue-600 hover:underline">
-                Clear All
-              </button>
-            </div>
-
-            {/* Categories */}
-            <div className="mb-6">
-              <h3 className="font-medium mb-3 text-gray-800">Categories</h3>
-              <div className="space-y-2">
-                {categories.map((category) => (
-                  <label key={category.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedCategories.includes(String(category.id))}
-                      onChange={() => toggleCategory(String(category.id))}
-                      className="rounded"
-                    />
-                    <span className="text-gray-700">{category.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Price Range */}
-            <div>
-              <h3 className="font-medium mb-3 text-gray-800">Price Range</h3>
-              <div className="space-y-4">
-                <div className="flex gap-2">
-                  <div>
-                    <label className="text-xs text-gray-500">Min</label>
-                    <input
-                      type="number"
-                      value={priceRange.min}
-                      onChange={(e) => setPriceRange({ ...priceRange, min: Number(e.target.value) })}
-                      className="w-full p-2 border rounded-md"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500">Max</label>
-                    <input
-                      type="number"
-                      value={priceRange.max}
-                      onChange={(e) => setPriceRange({ ...priceRange, max: Number(e.target.value) })}
-                      className="w-full p-2 border rounded-md"
-                    />
-                  </div>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1000"
-                  value={priceRange.max}
-                  onChange={(e) => setPriceRange({ ...priceRange, max: Number(e.target.value) })}
-                  className="w-full accent-[#004a7c]"
-                />
-              </div>
-            </div>
-          </div>
+          <FilterSidebar
+            categories={categories}
+            selectedCategories={selectedCategories}
+            toggleCategory={toggleCategory}
+            priceRange={priceRange}
+            setPriceRange={setPriceRange}
+            clearFilters={clearFilters}
+          />
         </aside>
 
-        {/* Products Grid */}
+        {/* Product Grid */}
         <section className="flex-1">
           {filteredProducts.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-lg shadow-md">
-              <h2 className="text-xl font-medium mb-4 text-gray-700">No products found</h2>
-              <p className="text-gray-500 mb-6">Try adjusting your filters or check back later.</p>
+              <h2 className="text-xl font-medium mb-4 text-gray-700">
+                {searchQuery ? `No results found for "${searchQuery}"` : 'No products found'}
+              </h2>
+              <p className="text-gray-500 mb-6">
+                {searchQuery
+                  ? 'Try a different search term or clear filters.'
+                  : 'Try adjusting your filters or check back later.'}
+              </p>
               <Button onClick={clearFilters}>Clear Filters</Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {filteredProducts.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  onAddToCart={() => addToCart(product)}
-                />
-              ))}
-            </div>
+            <>
+              <motion.div
+                layout
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              >
+                {filteredProducts.map((product) => (
+                  <ProductCard key={product.id} product={product} onAddToCart={() => addToCart(product)} />
+                ))}
+              </motion.div>
+
+              {/* Pagination */}
+              <div className="flex justify-center mt-10 gap-4">
+                <Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
+                  Previous
+                </Button>
+                <span className="px-4 py-2 text-gray-700">
+                  Page {page} of {data?.totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  disabled={page === data?.totalPages}
+                  onClick={() => setPage((p) => Math.min(p + 1, data.totalPages))}
+                >
+                  Next
+                </Button>
+              </div>
+            </>
           )}
         </section>
       </div>
 
-      {/* Cart bounce controller */}
+      {/* 🧠 Mobile Filter Drawer */}
+      <AnimatePresence>
+        {showFilters && (
+          <>
+            <motion.div
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={() => setShowFilters(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+
+            <motion.aside
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', stiffness: 100, damping: 20 }}
+              className="fixed top-0 left-0 h-full w-72 bg-white shadow-2xl z-50 p-6 overflow-y-auto"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold text-[#004a7c]">Filters</h2>
+                <button onClick={() => setShowFilters(false)}>
+                  <X className="h-5 w-5 text-gray-600" />
+                </button>
+              </div>
+
+              <FilterSidebar
+                categories={categories}
+                selectedCategories={selectedCategories}
+                toggleCategory={toggleCategory}
+                priceRange={priceRange}
+                setPriceRange={setPriceRange}
+                clearFilters={clearFilters}
+              />
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
       <motion.div animate={cartControls} />
+    </div>
+  );
+}
+
+// ✅ Filter Sidebar Component
+function FilterSidebar({ categories, selectedCategories, toggleCategory, priceRange, setPriceRange, clearFilters }) {
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-md border">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="font-semibold">Filters</h2>
+        <button onClick={clearFilters} className="text-sm text-blue-600 hover:underline">
+          Clear All
+        </button>
+      </div>
+
+      {/* Categories */}
+      <div className="mb-6">
+        <h3 className="font-medium mb-3 text-gray-800">Categories</h3>
+        {categories.length === 0 ? (
+          <p className="text-sm text-gray-500">Loading...</p>
+        ) : (
+          categories.map((cat) => (
+            <label key={cat.id} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedCategories.includes(cat.slug)}
+                onChange={() => toggleCategory(cat.slug)}
+                className="rounded"
+              />
+              <span className="text-gray-700">{cat.name}</span>
+            </label>
+          ))
+        )}
+      </div>
+
+      {/* Price Range */}
+      <div>
+        <h3 className="font-medium mb-3 text-gray-800">Price Range</h3>
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <input
+              type="number"
+              value={priceRange.min}
+              onChange={(e) => setPriceRange({ ...priceRange, min: Number(e.target.value) })}
+              className="w-full p-2 border rounded-md"
+              placeholder="Min"
+            />
+            <input
+              type="number"
+              value={priceRange.max}
+              onChange={(e) => setPriceRange({ ...priceRange, max: Number(e.target.value) })}
+              className="w-full p-2 border rounded-md"
+              placeholder="Max"
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -262,50 +302,67 @@ export default function ProductsPage() {
 
 
 
+
+
 // 'use client';
 
 // import { useState, useEffect } from 'react';
-// import { products, categories } from '@/lib/mock-data';
+// import { categories } from '@/lib/mock-data';
 // import { ProductCard } from '@/components/product-card';
-// import { Sliders, ChevronDown, X } from 'lucide-react';
+// import { Sliders, ChevronDown } from 'lucide-react';
 // import { Button } from '@/components/button';
+// import { toast } from 'react-hot-toast';
+// import { triggerCartConfetti } from "@/utils/confetti";
+// import { motion, useAnimation } from 'framer-motion';
 
 // export default function ProductsPage() {
 //   const [allProducts, setAllProducts] = useState([]);
 //   const [filteredProducts, setFilteredProducts] = useState([]);
 //   const [loading, setLoading] = useState(true);
 //   const [showFilters, setShowFilters] = useState(false);
-  
+
 //   // Filter states
 //   const [selectedCategories, setSelectedCategories] = useState([]);
 //   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
 //   const [sortBy, setSortBy] = useState('featured');
-  
+
+//   // 🎯 For cart animation & bounce
+//   const cartControls = useAnimation();
+
+//   // ✅ Load products dynamically from DB
 //   useEffect(() => {
-//     // Load products
-//     setAllProducts(products || []);
-//     setFilteredProducts(products || []);
-//     setLoading(false);
+//     const fetchProducts = async () => {
+//       try {
+//         const res = await fetch('/api/products');
+//         const data = await res.json();
+//         setAllProducts(data);
+//         setFilteredProducts(data);
+//       } catch (error) {
+//         console.error('Error fetching products:', error);
+//       } finally {
+//         setLoading(false);
+//       }
+//     };
+
+//     fetchProducts();
 //   }, []);
-  
+
+//   // ✅ Apply filters & sorting
 //   useEffect(() => {
-//     // Apply filters
 //     let result = [...allProducts];
-    
-//     // Filter by categories
+
 //     if (selectedCategories.length > 0) {
-//       result = result.filter(product => 
-//         selectedCategories.includes(product.category)
+//       result = result.filter((product) =>
+//         selectedCategories.includes(String(product.category_id))
 //       );
 //     }
-    
-//     // Filter by price range
-//     result = result.filter(product => 
-//       (product.discountPrice || product.price) >= priceRange.min && 
-//       (product.discountPrice || product.price) <= priceRange.max
+
+//     result = result.filter(
+//       (product) =>
+//         (product.discountPrice || product.price) >= priceRange.min &&
+//         (product.discountPrice || product.price) <= priceRange.max
 //     );
-    
-//     // Apply sorting
+
 //     switch (sortBy) {
 //       case 'price-low':
 //         result.sort((a, b) => (a.discountPrice || a.price) - (b.discountPrice || b.price));
@@ -319,53 +376,84 @@ export default function ProductsPage() {
 //       case 'rating':
 //         result.sort((a, b) => b.rating - a.rating);
 //         break;
-//       default: // featured
+//       default:
 //         result.sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
 //         break;
 //     }
-    
+
 //     setFilteredProducts(result);
 //   }, [allProducts, selectedCategories, priceRange, sortBy]);
-  
+
+//   // ✅ Add to Cart (LocalStorage + Confetti + Lottie + Bounce)
+//   const addToCart = async (product) => {
+//     const userData = JSON.parse(localStorage.getItem('user'));
+//     if (!userData) {
+//       toast.error('Please login to add products to cart');
+//       return;
+//     }
+
+//     const userCartKey = `cart_${userData.email}`;
+//     const cart = JSON.parse(localStorage.getItem(userCartKey)) || [];
+
+//     const index = cart.findIndex((item) => item.id === product.id);
+//     if (index !== -1) {
+//       cart[index].quantity += 1;
+//     } else {
+//       cart.push({ ...product, quantity: 1 });
+//     }
+
+//     localStorage.setItem(userCartKey, JSON.stringify(cart));
+
+//     // 🎉 Trigger confetti near top-right (cart icon area)
+//     triggerCartConfetti(0.92, 0.08);
+
+//     // 🛍️ Animate cart bounce effect
+//     await cartControls.start({ scale: 1.4, transition: { duration: 0.15 } });
+//     await cartControls.start({ scale: 1, transition: { type: "spring", stiffness: 200 } });
+
+//     toast.success(`${product.name} added to your cart 🛒`);
+//   };
+
+//   // ✅ Filter helpers
 //   const toggleCategory = (categorySlug) => {
-//     setSelectedCategories(prev => 
+//     setSelectedCategories((prev) =>
 //       prev.includes(categorySlug)
-//         ? prev.filter(c => c !== categorySlug)
+//         ? prev.filter((c) => c !== categorySlug)
 //         : [...prev, categorySlug]
 //     );
 //   };
-  
+
 //   const clearFilters = () => {
 //     setSelectedCategories([]);
 //     setPriceRange({ min: 0, max: 1000 });
 //     setSortBy('featured');
 //   };
-  
-//   const toggleFilters = () => {
-//     setShowFilters(!showFilters);
-//   };
-  
+
+//   const toggleFilters = () => setShowFilters(!showFilters);
+
+//   // ✅ Loading spinner
 //   if (loading) {
 //     return (
-//       <div className="container mx-auto px-4 py-16">
-//         <div className="flex justify-center items-center h-64">
-//           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-//         </div>
+//       <div className="flex justify-center items-center h-[70vh]">
+//         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#004a7c]" />
 //       </div>
 //     );
 //   }
-  
+
+//   // ✅ Main Layout
 //   return (
-//     <div className="container mx-auto px-4 py-8">
+//     <div className="container mx-auto px-4 py-8 relative">
+//       {/* Header */}
 //       <div className="flex justify-between items-center mb-8">
-//         <h1 className="text-3xl font-bold">All Products</h1>
-        
+//         <h1 className="text-3xl font-bold text-[#004a7c]">All Products</h1>
+
 //         <div className="flex items-center gap-4">
+//           {/* Sort Dropdown */}
 //           <div className="relative">
 //             <select
 //               value={sortBy}
 //               onChange={(e) => setSortBy(e.target.value)}
-//               className="appearance-none bg-white border rounded-md px-4 py-2 pr-8 cursor-pointer"
+//               className="appearance-none bg-white border rounded-md px-4 py-2 pr-8 cursor-pointer focus:outline-none"
 //             >
 //               <option value="featured">Featured</option>
 //               <option value="price-low">Price: Low to High</option>
@@ -373,53 +461,48 @@ export default function ProductsPage() {
 //               <option value="newest">Newest</option>
 //               <option value="rating">Highest Rated</option>
 //             </select>
-//             <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 pointer-events-none" />
+//             <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 pointer-events-none text-gray-500" />
 //           </div>
-          
-//           <Button 
-//             variant="outline" 
-//             onClick={toggleFilters}
-//             className="flex items-center gap-2 md:hidden"
-//           >
+
+//           <Button variant="outline" onClick={toggleFilters} className="flex items-center gap-2 md:hidden">
 //             <Sliders className="h-4 w-4" />
 //             Filters
 //           </Button>
 //         </div>
 //       </div>
-      
+
 //       <div className="flex flex-col md:flex-row gap-8">
-//         {/* Filters - Desktop */}
-//         <div className="hidden md:block w-64 flex-shrink-0">
-//           <div className="bg-white p-6 rounded-lg shadow-md">
+//         {/* Sidebar Filters (Desktop) */}
+//         <aside className="hidden md:block w-64 flex-shrink-0">
+//           <div className="bg-white p-6 rounded-lg shadow-md border">
 //             <div className="flex justify-between items-center mb-4">
 //               <h2 className="font-semibold">Filters</h2>
-//               <button 
-//                 onClick={clearFilters}
-//                 className="text-sm text-blue-600 hover:underline"
-//               >
+//               <button onClick={clearFilters} className="text-sm text-blue-600 hover:underline">
 //                 Clear All
 //               </button>
 //             </div>
-            
+
+//             {/* Categories */}
 //             <div className="mb-6">
-//               <h3 className="font-medium mb-3">Categories</h3>
+//               <h3 className="font-medium mb-3 text-gray-800">Categories</h3>
 //               <div className="space-y-2">
 //                 {categories.map((category) => (
 //                   <label key={category.id} className="flex items-center gap-2 cursor-pointer">
 //                     <input
 //                       type="checkbox"
-//                       checked={selectedCategories.includes(category.slug)}
-//                       onChange={() => toggleCategory(category.slug)}
+//                       checked={selectedCategories.includes(String(category.id))}
+//                       onChange={() => toggleCategory(String(category.id))}
 //                       className="rounded"
 //                     />
-//                     <span>{category.name}</span>
+//                     <span className="text-gray-700">{category.name}</span>
 //                   </label>
 //                 ))}
 //               </div>
 //             </div>
-            
+
+//             {/* Price Range */}
 //             <div>
-//               <h3 className="font-medium mb-3">Price Range</h3>
+//               <h3 className="font-medium mb-3 text-gray-800">Price Range</h3>
 //               <div className="space-y-4">
 //                 <div className="flex gap-2">
 //                   <div>
@@ -447,111 +530,37 @@ export default function ProductsPage() {
 //                   max="1000"
 //                   value={priceRange.max}
 //                   onChange={(e) => setPriceRange({ ...priceRange, max: Number(e.target.value) })}
-//                   className="w-full"
+//                   className="w-full accent-[#004a7c]"
 //                 />
 //               </div>
 //             </div>
 //           </div>
-//         </div>
-        
-//         {/* Mobile Filters */}
-//         {showFilters && (
-//           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 md:hidden">
-//             <div className="bg-white h-full w-80 p-6 ml-auto">
-//               <div className="flex justify-between items-center mb-6">
-//                 <h2 className="font-semibold">Filters</h2>
-//                 <button onClick={toggleFilters}>
-//                   <X className="h-6 w-6" />
-//                 </button>
-//               </div>
-              
-//               <div className="mb-6">
-//                 <h3 className="font-medium mb-3">Categories</h3>
-//                 <div className="space-y-2">
-//                   {categories.map((category) => (
-//                     <label key={category.id} className="flex items-center gap-2 cursor-pointer">
-//                       <input
-//                         type="checkbox"
-//                         checked={selectedCategories.includes(category.slug)}
-//                         onChange={() => toggleCategory(category.slug)}
-//                         className="rounded"
-//                       />
-//                       <span>{category.name}</span>
-//                     </label>
-//                   ))}
-//                 </div>
-//               </div>
-              
-//               <div className="mb-6">
-//                 <h3 className="font-medium mb-3">Price Range</h3>
-//                 <div className="space-y-4">
-//                   <div className="flex gap-2">
-//                     <div>
-//                       <label className="text-xs text-gray-500">Min</label>
-//                       <input
-//                         type="number"
-//                         value={priceRange.min}
-//                         onChange={(e) => setPriceRange({ ...priceRange, min: Number(e.target.value) })}
-//                         className="w-full p-2 border rounded-md"
-//                       />
-//                     </div>
-//                     <div>
-//                       <label className="text-xs text-gray-500">Max</label>
-//                       <input
-//                         type="number"
-//                         value={priceRange.max}
-//                         onChange={(e) => setPriceRange({ ...priceRange, max: Number(e.target.value) })}
-//                         className="w-full p-2 border rounded-md"
-//                       />
-//                     </div>
-//                   </div>
-//                   <input
-//                     type="range"
-//                     min="0"
-//                     max="1000"
-//                     value={priceRange.max}
-//                     onChange={(e) => setPriceRange({ ...priceRange, max: Number(e.target.value) })}
-//                     className="w-full"
-//                   />
-//                 </div>
-//               </div>
-              
-//               <div className="flex gap-2 mt-auto">
-//                 <Button 
-//                   variant="outline" 
-//                   onClick={clearFilters}
-//                   className="flex-1"
-//                 >
-//                   Clear
-//                 </Button>
-//                 <Button 
-//                   onClick={toggleFilters}
-//                   className="flex-1"
-//                 >
-//                   Apply
-//                 </Button>
-//               </div>
-//             </div>
-//           </div>
-//         )}
-        
+//         </aside>
+
 //         {/* Products Grid */}
-//         <div className="flex-1">
+//         <section className="flex-1">
 //           {filteredProducts.length === 0 ? (
 //             <div className="text-center py-16 bg-white rounded-lg shadow-md">
-//               <h2 className="text-xl font-medium mb-4">No products found</h2>
-//               <p className="text-gray-500 mb-6">Try adjusting your filters</p>
+//               <h2 className="text-xl font-medium mb-4 text-gray-700">No products found</h2>
+//               <p className="text-gray-500 mb-6">Try adjusting your filters or check back later.</p>
 //               <Button onClick={clearFilters}>Clear Filters</Button>
 //             </div>
 //           ) : (
 //             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 //               {filteredProducts.map((product) => (
-//                 <ProductCard key={product.id} product={product} />
+//                 <ProductCard
+//                   key={product.id}
+//                   product={product}
+//                   onAddToCart={() => addToCart(product)}
+//                 />
 //               ))}
 //             </div>
 //           )}
-//         </div>
+//         </section>
 //       </div>
+
+//       {/* Cart bounce controller */}
+//       <motion.div animate={cartControls} />
 //     </div>
 //   );
 // }

@@ -3,20 +3,36 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useAuth } from '@/app/contexts/AuthContext';
+import LoadingSpinner from '@/components/LoadingSpinner';
 
-export default function ProtectedRoute({ allowedRoles, children }) {
-  const { user, isLoggedIn } = useAuth();
+export default function ProtectedRoute({ allowedRoles = [], children }) {
+  const { user, isLoggedIn, isInitialized } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
+    if (!isInitialized) return; // still initializing
+
+    // 🔒 Not logged in — send to login
     if (!isLoggedIn) {
       router.replace('/login');
-    } else if (allowedRoles && !allowedRoles.includes(user.role)) {
-      router.replace('/');
+      return;
     }
-  }, [isLoggedIn, user, allowedRoles, router]);
 
+    // 🔒 Role mismatch — redirect to their own dashboard
+    if (allowedRoles.length > 0 && user && !allowedRoles.includes(user.role)) {
+      if (user.role === 'supplier') router.replace('/supplier-dashboard');
+      else if (user.role === 'user') router.replace('/user-dashboard');
+      else router.replace('/');
+    }
+  }, [isInitialized, isLoggedIn, user?.role, allowedRoles.join(','), router]);
+
+  // 🌀 Still initializing auth
+  if (!isInitialized) return <LoadingSpinner />;
+
+  // 🚪 Prevent render for unauthorized users
   if (!isLoggedIn) return null;
+
+  // ✅ Render protected content
   return <>{children}</>;
 }
 
@@ -33,15 +49,15 @@ export default function ProtectedRoute({ allowedRoles, children }) {
 
 //   useEffect(() => {
 //     if (!isLoggedIn) {
-//       // Not logged in → go to login
 //       router.replace('/login');
 //     } else if (allowedRoles && !allowedRoles.includes(user.role)) {
-//       // Logged in but role mismatch → go to home
 //       router.replace('/');
 //     }
 //   }, [isLoggedIn, user, allowedRoles, router]);
 
-//   if (!isLoggedIn) return null; // Optional: loading spinner
-
+//   if (!isLoggedIn) return null;
 //   return <>{children}</>;
 // }
+
+
+
