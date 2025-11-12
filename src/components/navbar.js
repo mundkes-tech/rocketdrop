@@ -5,14 +5,14 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { ShoppingCart, Menu, X, User, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useCart } from '@/hooks/useCart';
+import { useCartContext } from '@/app/contexts/CartContext';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { Button } from '@/components/button';
 
 export function Navigation() {
   const router = useRouter();
   const pathname = usePathname();
-  const { getItemsCount } = useCart();
+  const { getItemsCount } = useCartContext();
   const { user, logout, isLoggedIn } = useAuth();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

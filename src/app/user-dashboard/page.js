@@ -1,13 +1,10 @@
 'use client';
 
-import ProtectedRoute from '@/components/ProtectedRoute';
 import UserDashboard from './UserDashboard';
 
 export default function UserDashboardPage() {
   return (
-    <ProtectedRoute allowedRoles={['user']}>
       <UserDashboard />
-    </ProtectedRoute>
   );
 }
 

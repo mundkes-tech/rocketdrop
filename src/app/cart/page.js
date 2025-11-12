@@ -1,47 +1,48 @@
 'use client';
-
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Trash2, ArrowLeft, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/button';
+import { useCart } from '@/hooks/useCart';
+import { useAuth } from '@/app/contexts/AuthContext';
 
 export default function CartPage() {
+  const { user } = useAuth();
+  const { getCart, saveCart, clearCart: clearStoredCart } = useCart();
+
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🧠 Load cart asynchronously from localStorage
+  // ✅ Load cart only when user changes
   useEffect(() => {
-    setTimeout(() => {
-      const userCartKey = Object.keys(localStorage).find((key) =>
-        key.startsWith('cart_')
-      );
-      if (userCartKey) {
-        const savedCart = JSON.parse(localStorage.getItem(userCartKey)) || [];
-        setCart(savedCart);
-      }
-      setLoading(false);
-    }, 0);
-  }, []);
+    const initialCart = getCart(user);
+    setCart((prev) => {
+      const same = JSON.stringify(prev) === JSON.stringify(initialCart);
+      return same ? prev : initialCart;
+    });
+    setLoading(false);
+  }, [user?.email]); // 👈 runs once per login
 
-  // 🧾 Update localStorage whenever cart changes
-  const updateCart = useCallback((updated) => {
-    setCart(updated);
-    const userCartKey = Object.keys(localStorage).find((key) =>
-      key.startsWith('cart_')
-    );
-    if (userCartKey) {
-      localStorage.setItem(userCartKey, JSON.stringify(updated));
-    }
-  }, []);
+  // 🧾 Update cart safely
+  const updateCart = useCallback(
+    (updated) => {
+      setCart(updated);
+      saveCart(user, updated); // ✅ fixed order
+    },
+    [user, saveCart]
+  );
 
   const removeItem = useCallback(
     (id) => updateCart(cart.filter((item) => item.id !== id)),
     [cart, updateCart]
   );
 
-  const clearCart = useCallback(() => updateCart([]), [updateCart]);
+  const clearCart = useCallback(() => {
+    clearStoredCart(user);
+    setCart([]);
+  }, [clearStoredCart, user]);
 
   const changeQuantity = useCallback(
     (id, delta) => {
@@ -51,8 +52,6 @@ export default function CartPage() {
           : item
       );
       updateCart(updated);
-
-      // ✨ Smooth scroll to item for better feedback
       window.requestAnimationFrame(() => {
         const el = document.querySelector(`#cart-item-${id}`);
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -61,11 +60,18 @@ export default function CartPage() {
     [cart, updateCart]
   );
 
-  // 🧮 Compute subtotal efficiently
   const subtotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    () =>
+      Array.isArray(cart)
+        ? cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+        : 0,
     [cart]
   );
+
+  const handleCheckout = () => {
+    if (!user) window.location.href = '/login';
+    else window.location.href = '/checkout';
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0A1128] via-[#001F54] to-[#034078] text-white px-4 py-12 md:px-12">
@@ -86,7 +92,6 @@ export default function CartPage() {
           <EmptyCart />
         ) : (
           <div className="grid md:grid-cols-3 gap-8">
-            {/* 🛒 Cart Items */}
             <div className="md:col-span-2 bg-white/10 backdrop-blur-xl rounded-2xl shadow-xl p-6 border border-white/10">
               <AnimatePresence>
                 {cart.map((item) => (
@@ -103,13 +108,11 @@ export default function CartPage() {
                     <div className="flex items-center gap-4">
                       <div className="w-20 h-20 relative rounded-xl overflow-hidden shadow-lg">
                         <Image
-                          src={item.imageUrl || '/placeholder.png'}
+                          src={item.imageUrl || '/images/products/placeholder.svg'}
                           alt={item.name}
                           fill
                           loading="lazy"
-                          placeholder="blur"
-                          blurDataURL="/placeholder.png"
-                          className="object-cover group-hover:scale-105 transition-transform duration-500"
+                          className="object-cover"
                         />
                       </div>
                       <div>
@@ -117,7 +120,7 @@ export default function CartPage() {
                           {item.name}
                         </h3>
                         <p className="text-sm text-blue-300">
-                          ${Number(item.price).toFixed(2)}
+                          ₹{Number(item.price).toFixed(2)}
                         </p>
                       </div>
                     </div>
@@ -141,7 +144,7 @@ export default function CartPage() {
                         </button>
                       </div>
                       <p className="w-20 text-right font-semibold text-blue-200">
-                        ${(item.price * item.quantity).toFixed(2)}
+                        ₹{(item.price * item.quantity).toFixed(2)}
                       </p>
                       <button
                         onClick={() => removeItem(item.id)}
@@ -168,7 +171,7 @@ export default function CartPage() {
               <div className="space-y-3 mb-6 text-blue-100">
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span>${subtotal.toFixed(2)}</span>
+                  <span>₹{subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Shipping</span>
@@ -176,11 +179,14 @@ export default function CartPage() {
                 </div>
                 <div className="flex justify-between text-lg font-semibold text-white border-t border-white/10 pt-3">
                   <span>Total</span>
-                  <span>${subtotal.toFixed(2)}</span>
+                  <span>₹{subtotal.toFixed(2)}</span>
                 </div>
               </div>
 
-              <Button className="w-full py-3 text-lg bg-gradient-to-r from-blue-500 to-cyan-400 text-white font-semibold rounded-xl shadow-lg hover:scale-[1.02] transition cursor-pointer">
+              <Button
+                onClick={handleCheckout}
+                className="w-full py-3 text-lg bg-gradient-to-r from-blue-500 to-cyan-400 text-white font-semibold rounded-xl shadow-lg hover:scale-[1.02] transition cursor-pointer"
+              >
                 Proceed to Checkout
               </Button>
 
@@ -205,7 +211,6 @@ export default function CartPage() {
   );
 }
 
-// 🧩 Empty Cart Component
 function EmptyCart() {
   return (
     <motion.div
@@ -228,6 +233,8 @@ function EmptyCart() {
     </motion.div>
   );
 }
+
+
 
 
 // 'use client';

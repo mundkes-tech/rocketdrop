@@ -13,7 +13,7 @@ import { motion } from 'framer-motion';
 export default function LoginPage() {
   const router = useRouter();
   const { width, height } = useWindowSize();
-  const { user, login, isLoggedIn } = useAuth();
+  const { login, isLoggedIn } = useAuth();
 
   const [role, setRole] = useState('user');
   const [email, setEmail] = useState('');
@@ -22,91 +22,75 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   // 🧩 Handle Login
-// 🧩 Handle Login
-const handleLogin = async (e) => {
-  e.preventDefault();
-  setError('');
-  console.clear();
-  console.log('🟦 Login attempt started...');
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    console.clear();
+    console.log('🟦 Login attempt started...');
 
-  if (!email || !password) {
-    console.warn('⚠️ Missing email or password');
-    setError('Please fill in all fields');
-    return;
-  }
-
-  try {
-    setLoading(true);
-    console.log('📡 Sending login request to /api/login...');
-
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, role }),
-    });
-
-    console.log(`📩 Response received (status: ${res.status})`);
-    const data = await res.json();
-    console.log('🧠 Full API Response:', data);
-
-    if (!res.ok || !data.success) {
-      console.error('❌ Login failed:', data.message || data.error);
-      setError(data.message || data.error || 'Invalid credentials');
+    if (!email || !password) {
+      setError('Please fill in all fields');
       return;
     }
 
-    // ✅ Extract user safely
-    const userData = data.data?.user;
-    const redirectPath = data.data?.redirect;
+    try {
+      setLoading(true);
+      console.log('📡 Sending login request to /api/login...');
 
-    if (!userData) {
-      console.error('⚠️ No user object returned from backend.');
-      setError('Unexpected response from server. Please try again.');
-      return;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, role }),
+      });
+
+      const data = await res.json();
+      console.log('🧠 API Response:', data);
+
+      if (!res.ok || !data.success) {
+        setError(data.message || data.error || 'Invalid credentials');
+        return;
+      }
+
+      // ✅ Extract and validate user data
+      const userData = data.data?.user;
+      if (!userData) {
+        setError('Unexpected server response. Please try again.');
+        return;
+      }
+
+      // ✅ Save user locally + in AuthContext
+      login(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
+      console.log('💾 User saved to localStorage:', userData);
+
+      // ✅ Check if user had a saved redirect (e.g., from "Buy Now" or Profile)
+      const storedRedirect = localStorage.getItem('redirectAfterLogin');
+      if (storedRedirect) {
+        console.log(`🚀 Redirecting to saved route: ${storedRedirect}`);
+        localStorage.removeItem('redirectAfterLogin');
+        setTimeout(() => {
+          router.replace(storedRedirect);
+        }, 1000);
+      } else if (userData.role === 'supplier') {
+        console.log('🚀 Redirecting to supplier dashboard');
+        setTimeout(() => {
+          router.replace('/supplier-dashboard');
+        }, 1000);
+      } else {
+        console.log('🚀 Redirecting to user dashboard');
+        setTimeout(() => {
+          router.replace('/user-dashboard');
+        }, 1000);
+      }
+    } catch (err) {
+      console.error('💥 Unexpected error during login:', err);
+      setError('Something went wrong. Please try again later.');
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // ✅ Save user and update context
-    console.log('✅ Login successful — updating AuthContext and localStorage...');
-    login(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
-    console.log('💾 User stored in localStorage:', userData);
-
-    // ✅ Immediate frontend redirect (optional small delay for animation)
-    if (redirectPath) {
-      console.log(`🚀 Redirecting to ${redirectPath}...`);
-      setTimeout(() => {
-        router.replace(redirectPath);
-      }, 1000);
-    } else {
-      console.warn('⚠️ No redirect path returned — staying on login page.');
-    }
-  } catch (err) {
-    console.error('💥 Unexpected error during login:', err);
-    setError('Something went wrong. Please try again later.');
-  } finally {
-    setLoading(false);
-    console.log('🟨 Login process completed.');
-  }
-};
-
-
-  // 🧠 Redirect after successful login (based on role)
-  useEffect(() => {
-    if (isLoggedIn && user) {
-      const timer = setTimeout(() => {
-        const targetRoute =
-          user.role === 'supplier'
-            ? '/supplier-dashboard'
-            : user.role === 'user'
-            ? '/user-dashboard'
-            : '/';
-        router.replace(targetRoute);
-      }, 1500); // small delay for success animation
-      return () => clearTimeout(timer);
-    }
-  }, [isLoggedIn, user, router]);
-
-  // ✅ Success Screen (Confetti + Auto Redirect)
+  // ✅ Success screen animation
   if (isLoggedIn) {
     return (
       <div className="relative flex flex-col items-center justify-center h-screen bg-gradient-to-br from-[#0A1128] via-[#001F54] to-[#034078] overflow-hidden">
@@ -123,7 +107,7 @@ const handleLogin = async (e) => {
             className="h-full bg-green-400"
           />
         </div>
-        <p className="text-blue-100 text-lg mt-3">Redirecting to your dashboard...</p>
+        <p className="text-blue-100 text-lg mt-3">Redirecting...</p>
       </div>
     );
   }
@@ -256,8 +240,6 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 }
 
 
-
-
 // 'use client';
 
 // import { useEffect, useState } from 'react';
@@ -268,6 +250,7 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 // import { CheckCircle } from 'lucide-react';
 // import Confetti from 'react-confetti';
 // import { useWindowSize } from 'react-use';
+// import { motion } from 'framer-motion';
 
 // export default function LoginPage() {
 //   const router = useRouter();
@@ -278,67 +261,111 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 //   const [email, setEmail] = useState('');
 //   const [password, setPassword] = useState('');
 //   const [error, setError] = useState('');
-
-//   // 🧩 Check localStorage on mount — redirect if already logged in
-//   useEffect(() => {
-//     const storedUser = localStorage.getItem('user');
-//     const loggedUser = storedUser ? JSON.parse(storedUser) : null;
-
-//     if (loggedUser) {
-//       if (loggedUser.role === 'user') router.replace('/user-dashboard');
-//       else if (loggedUser.role === 'supplier') router.replace('/supplier-dashboard');
-//     }
-//   }, [router]);
+//   const [loading, setLoading] = useState(false);
 
 //   // 🧩 Handle Login
-//   const handleLogin = async (e) => {
-//     e.preventDefault();
-//     setError('');
+// // 🧩 Handle Login
+// const handleLogin = async (e) => {
+//   e.preventDefault();
+//   setError('');
+//   console.clear();
+//   console.log('🟦 Login attempt started...');
 
-//     try {
-//       const res = await fetch('/api/login', {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({ email, password, role }),
-//       });
+//   if (!email || !password) {
+//     console.warn('⚠️ Missing email or password');
+//     setError('Please fill in all fields');
+//     return;
+//   }
 
-//       const data = await res.json();
+//   try {
+//     setLoading(true);
+//     console.log('📡 Sending login request to /api/login...');
 
-//       if (res.ok) {
-//         login(data.user);
-//         localStorage.setItem('user', JSON.stringify(data.user));
-//       } else {
-//         setError(data.error || 'Invalid credentials');
-//       }
-//     } catch (err) {
-//       console.error(err);
-//       setError('Something went wrong. Try again later.');
+//     const res = await fetch('/api/login', {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({ email, password, role }),
+//     });
+
+//     console.log(`📩 Response received (status: ${res.status})`);
+//     const data = await res.json();
+//     console.log('🧠 Full API Response:', data);
+
+//     if (!res.ok || !data.success) {
+//       console.error('❌ Login failed:', data.message || data.error);
+//       setError(data.message || data.error || 'Invalid credentials');
+//       return;
 //     }
-//   };
 
-//   // 🧩 Redirect after login
+//     // ✅ Extract user safely
+//     const userData = data.data?.user;
+//     const redirectPath = data.data?.redirect;
+
+//     if (!userData) {
+//       console.error('⚠️ No user object returned from backend.');
+//       setError('Unexpected response from server. Please try again.');
+//       return;
+//     }
+
+//     // ✅ Save user and update context
+//     console.log('✅ Login successful — updating AuthContext and localStorage...');
+//     login(userData);
+//     localStorage.setItem('user', JSON.stringify(userData));
+//     console.log('💾 User stored in localStorage:', userData);
+
+//     // ✅ Immediate frontend redirect (optional small delay for animation)
+//     if (redirectPath) {
+//       console.log(`🚀 Redirecting to ${redirectPath}...`);
+//       setTimeout(() => {
+//         router.replace(redirectPath);
+//       }, 1000);
+//     } else {
+//       console.warn('⚠️ No redirect path returned — staying on login page.');
+//     }
+//   } catch (err) {
+//     console.error('💥 Unexpected error during login:', err);
+//     setError('Something went wrong. Please try again later.');
+//   } finally {
+//     setLoading(false);
+//     console.log('🟨 Login process completed.');
+//   }
+// };
+
+
+//   // 🧠 Redirect after successful login (based on role)
 //   useEffect(() => {
 //     if (isLoggedIn && user) {
 //       const timer = setTimeout(() => {
-//         if (user.role === 'user') router.push('/user-dashboard');
-//         else if (user.role === 'supplier') router.push('/supplier-dashboard');
-//         else router.push('/');
-//       }, 2000);
+//         const targetRoute =
+//           user.role === 'supplier'
+//             ? '/supplier-dashboard'
+//             : user.role === 'user'
+//             ? '/user-dashboard'
+//             : '/';
+//         router.replace(targetRoute);
+//       }, 1500); // small delay for success animation
 //       return () => clearTimeout(timer);
 //     }
 //   }, [isLoggedIn, user, router]);
 
-//   // ✅ Logged-in success screen
+//   // ✅ Success Screen (Confetti + Auto Redirect)
 //   if (isLoggedIn) {
 //     return (
-//       <div className="relative flex flex-col items-center justify-center h-screen bg-gradient-to-br from-[#e8f1f5] to-white overflow-hidden">
-//         <Confetti width={width} height={height} numberOfPieces={150} recycle={false} />
-
-//         <CheckCircle className="text-green-500 w-20 h-20 mb-4 animate-bounce" />
-//         <h2 className="text-3xl font-bold text-[#2C5670] mb-2 animate-fadeIn">
+//       <div className="relative flex flex-col items-center justify-center h-screen bg-gradient-to-br from-[#0A1128] via-[#001F54] to-[#034078] overflow-hidden">
+//         <Confetti width={width} height={height} numberOfPieces={180} recycle={false} />
+//         <CheckCircle className="text-green-400 w-20 h-20 mb-4 animate-bounce" />
+//         <h2 className="text-3xl font-bold text-blue-200 mb-2 animate-fadeIn">
 //           Login Successful!
 //         </h2>
-//         <p className="text-gray-600 text-lg">Redirecting to your dashboard...</p>
+//         <div className="w-40 h-1 bg-blue-400 rounded-full overflow-hidden mt-4">
+//           <motion.div
+//             initial={{ width: 0 }}
+//             animate={{ width: '100%' }}
+//             transition={{ duration: 1.5, ease: 'easeInOut' }}
+//             className="h-full bg-green-400"
+//           />
+//         </div>
+//         <p className="text-blue-100 text-lg mt-3">Redirecting to your dashboard...</p>
 //       </div>
 //     );
 //   }
@@ -346,10 +373,14 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 //   // 🧩 Main Login Form
 //   return (
 //     <div className="flex flex-col md:flex-row w-full h-screen">
-//       {/* Left Panel */}
-//       <div className="w-full md:w-1/2 h-screen flex items-center justify-center bg-gradient-to-br from-[#e8f1f5] to-[#e8f1f5] p-8 sm:p-12 rounded-l-3xl shadow-2xl">
-//         <div className="w-full max-w-md">
-//           <h2 className="text-3xl sm:text-4xl font-bold text-[#2C5670] text-center mb-8">
+//       {/* Left Panel (Form) */}
+//       <motion.div
+//         initial={{ opacity: 0, y: 30 }}
+//         animate={{ opacity: 1, y: 0 }}
+//         className="w-full md:w-1/2 h-screen flex items-center justify-center bg-gradient-to-br from-[#0A1128] via-[#001F54] to-[#034078] p-8 sm:p-12 rounded-l-3xl shadow-2xl"
+//       >
+//         <div className="w-full max-w-md text-white">
+//           <h2 className="text-3xl sm:text-4xl font-bold text-center mb-8">
 //             Login to RocketDrop
 //           </h2>
 
@@ -360,10 +391,10 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 //                 key={r}
 //                 type="button"
 //                 onClick={() => setRole(r)}
-//                 className={`px-6 py-3 rounded-full font-medium border transition ${
+//                 className={`px-6 py-3 rounded-full font-medium border cursor-pointer transition ${
 //                   role === r
-//                     ? 'bg-gradient-to-r from-[#D7C6BC] to-[#2C5670] text-white shadow-lg'
-//                     : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+//                     ? 'bg-blue-600 border-blue-400 text-white shadow-lg'
+//                     : 'bg-white/10 text-blue-200 border-blue-300 hover:bg-white/20'
 //                 }`}
 //               >
 //                 {r.charAt(0).toUpperCase() + r.slice(1)}
@@ -371,7 +402,7 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 //             ))}
 //           </div>
 
-//           {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+//           {error && <p className="text-red-400 text-center mb-4">{error}</p>}
 
 //           <form onSubmit={handleLogin} className="grid grid-cols-1 gap-6">
 //             <FloatingInput
@@ -380,6 +411,7 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 //               label="Email*"
 //               value={email}
 //               onChange={(e) => setEmail(e.target.value)}
+//               autoFocus
 //               required
 //             />
 //             <FloatingInput
@@ -392,28 +424,39 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 //             />
 //             <button
 //               type="submit"
-//               className="mt-4 bg-gradient-to-r from-[#004a7c] to-[#005691] text-white py-3 rounded-full font-semibold hover:opacity-90 transition shadow-md"
+//               disabled={loading}
+//               className={`mt-4 py-3 rounded-full font-semibold transition shadow-md cursor-pointer ${
+//                 loading
+//                   ? 'bg-blue-400 opacity-70 cursor-not-allowed'
+//                   : 'bg-gradient-to-r from-blue-500 to-cyan-400 text-white hover:scale-[1.02]'
+//               }`}
 //             >
-//               Login
+//               {loading ? 'Logging in...' : 'Login'}
 //             </button>
 //           </form>
 
-//           <p className="text-center mt-6 text-gray-600 text-sm">
+//           <p className="text-center mt-6 text-blue-200 text-sm">
 //             New user?{' '}
-//             <Link href="/register" className="text-[#2C5670] font-medium hover:underline">
+//             <Link
+//               href="/register"
+//               className="text-blue-300 font-medium hover:underline cursor-pointer"
+//             >
 //               Sign up
 //             </Link>
 //           </p>
 
 //           <p className="text-center mt-2 text-sm">
-//             <Link href="/forgot-password" className="text-gray-500 hover:underline">
+//             <Link
+//               href="/forgot-password"
+//               className="text-blue-300 hover:underline cursor-pointer"
+//             >
 //               Forgot password?
 //             </Link>
 //           </p>
 //         </div>
-//       </div>
+//       </motion.div>
 
-//       {/* Right Panel */}
+//       {/* Right Panel (Illustration) */}
 //       <div className="hidden md:flex w-1/2 h-screen relative bg-gradient-to-br from-[#004a7c] to-[#e8f1f5] overflow-hidden p-12">
 //         <Image
 //           src="/Images/login.jpg"
@@ -425,7 +468,7 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 //         <div className="flex flex-col items-center justify-center text-center z-10 w-full">
 //           <h1 className="text-6xl font-bold mb-4 text-[#011f4b]">Welcome Back!</h1>
 //           <p className="text-lg text-[#011f4b]">
-//             Login to your RocketDrop account and continue selling globally with ease.
+//             Login to your RocketDrop account and continue shopping or selling globally.
 //           </p>
 //         </div>
 //       </div>
@@ -433,7 +476,8 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 //   );
 // }
 
-// function FloatingInput({ name, type = 'text', label, value, onChange, required }) {
+// // 💡 Floating Label Input Component
+// function FloatingInput({ name, type = 'text', label, value, onChange, required, autoFocus }) {
 //   return (
 //     <div className="relative w-full">
 //       <input
@@ -442,16 +486,13 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
 //         value={value}
 //         onChange={onChange}
 //         required={required}
+//         autoFocus={autoFocus}
 //         placeholder=" "
-//         className="peer w-full border border-gray-300 rounded-lg px-4 pt-5 pb-3 text-gray-900 placeholder-transparent focus:outline-none focus:ring-2 focus:ring-[#004a7c]/60 transition-all duration-200"
+//         className="peer w-full border border-white/20 bg-white/10 rounded-lg px-4 pt-5 pb-3 text-white placeholder-transparent focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-200"
 //       />
-//       <label className="absolute left-4 top-3 text-gray-400 text-sm transition-all duration-200 peer-placeholder-shown:top-5 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-sm peer-focus:text-[#2C5670]">
+//       <label className="absolute left-4 top-3 text-blue-200 text-sm transition-all duration-200 peer-placeholder-shown:top-5 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-sm peer-focus:text-blue-300">
 //         {label}
 //       </label>
 //     </div>
 //   );
 // }
-
-
-
-

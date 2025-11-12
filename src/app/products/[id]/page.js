@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { toast } from 'react-hot-toast';
 import {
   Star,
   ShoppingCart,
@@ -17,17 +18,21 @@ import {
 import { Button } from '@/components/button';
 import { formatPrice } from '@/utils/formatPrice';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '@/context/AuthContext'; // ✅ Import auth context
 
 export default function ProductDetails() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth(); // ✅ access logged-in user
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
 
-  // Fetch product data dynamically
+  const isSupplier = user?.role === 'supplier';
+
+  // ✅ Fetch product
   useEffect(() => {
     const fetchProduct = async () => {
       try {
@@ -45,7 +50,7 @@ export default function ProductDetails() {
     fetchProduct();
   }, [params.id]);
 
-  // Handle loading state (Skeleton UI)
+  // ✅ Loading skeleton
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8 animate-pulse">
@@ -63,7 +68,6 @@ export default function ProductDetails() {
     );
   }
 
-  // Handle error state
   if (error || !product) {
     return (
       <div className="container mx-auto px-4 py-16 text-center">
@@ -78,7 +82,6 @@ export default function ProductDetails() {
     );
   }
 
-  // Derived values
   const images = product.images?.length ? product.images : ['/placeholder.jpg'];
   const inStock = product.stock > 0;
   const discount = product.discountPrice
@@ -90,9 +93,44 @@ export default function ProductDetails() {
     setQuantity(newQuantity);
   };
 
+  // ✅ Add to cart with localStorage
   const addToCart = () => {
-    console.log('Added to cart:', { ...product, quantity });
-    alert(`✅ ${quantity} × ${product.name} added to cart!`);
+    if (isSupplier) return; // supplier can't add
+    const cartKey = user?.email ? `cart_${user.email}` : 'cart_guest';
+    const cart = JSON.parse(localStorage.getItem(cartKey)) || [];
+    const existing = cart.find((item) => item.id === product.id);
+
+    if (existing) existing.quantity += quantity;
+    else cart.push({ ...product, quantity });
+
+    localStorage.setItem(cartKey, JSON.stringify(cart));
+    toast.success(`${product.name} added to cart 🛒`);
+  };
+
+  // ✅ Handle Buy Now
+  const handleBuyNow = () => {
+    if (isSupplier) return; // supplier can't buy
+
+    const checkoutProduct = { ...product, quantity };
+
+    // Save to user's cart
+    const cartKey = user?.email ? `cart_${user.email}` : 'cart_guest';
+    const cart = JSON.parse(localStorage.getItem(cartKey)) || [];
+    const exists = cart.find((item) => item.id === product.id);
+    if (!exists) cart.push(checkoutProduct);
+    localStorage.setItem(cartKey, JSON.stringify(cart));
+
+    // If not logged in → redirect to login first
+    if (!user || user.role !== 'user') {
+      localStorage.setItem('redirectAfterLogin', '/checkout');
+      toast('Please login to continue checkout', { icon: '🔒' });
+      router.push('/login');
+      return;
+    }
+
+    // ✅ Logged-in user → go to checkout
+    localStorage.setItem('checkoutItem', JSON.stringify(checkoutProduct));
+    router.push('/checkout');
   };
 
   return (
@@ -107,23 +145,12 @@ export default function ProductDetails() {
         <Link href="/" className="hover:text-blue-600 transition-colors">Home</Link>
         <ChevronRight className="h-4 w-4 mx-2" />
         <Link href="/products" className="hover:text-blue-600 transition-colors">Products</Link>
-        {product.category && (
-          <>
-            <ChevronRight className="h-4 w-4 mx-2" />
-            <Link
-              href={`/category/${product.category?.toLowerCase()}`}
-              className="hover:text-blue-600 transition-colors"
-            >
-              {product.category}
-            </Link>
-          </>
-        )}
         <ChevronRight className="h-4 w-4 mx-2" />
         <span className="text-gray-700">{product.name}</span>
       </div>
 
       <div className="flex flex-col md:flex-row gap-8">
-        {/* Product Images */}
+        {/* Images */}
         <div className="w-full md:w-1/2">
           <div className="relative h-96 bg-white rounded-lg overflow-hidden border">
             <AnimatePresence mode="wait">
@@ -170,7 +197,7 @@ export default function ProductDetails() {
           )}
         </div>
 
-        {/* Product Info */}
+        {/* Info */}
         <div className="w-full md:w-1/2">
           <h1 className="text-3xl font-bold mb-2">{product.name}</h1>
 
@@ -216,8 +243,7 @@ export default function ProductDetails() {
 
           {/* Description */}
           <p className="text-gray-700 mb-6 leading-relaxed">
-            {product.description ||
-              `This premium ${product.category?.toLowerCase() || ''} offers exceptional quality and performance.`}
+            {product.description || 'High-quality product built to last.'}
           </p>
 
           {/* Quantity */}
@@ -241,46 +267,43 @@ export default function ProductDetails() {
               </button>
             </div>
             <span
-              className={`ml-4 font-semibold ${
-                inStock ? 'text-green-600' : 'text-red-500'
-              }`}
+              className={`ml-4 font-semibold ${inStock ? 'text-green-600' : 'text-red-500'}`}
             >
               {inStock ? 'In Stock' : 'Out of Stock'}
             </span>
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-wrap gap-4 mb-4">
-            <Button
-              className="flex-1 py-3 transition-transform hover:scale-[1.02]"
-              onClick={addToCart}
-              disabled={!inStock}
-            >
-              <ShoppingCart className="mr-2 h-5 w-5" />
-              Add to Cart
-            </Button>
-            <Button variant="outline" className="px-4 py-3 hover:bg-gray-50">
-              <Heart className="h-5 w-5" />
-            </Button>
-            <Button variant="outline" className="px-4 py-3 hover:bg-gray-50">
-              <Share2 className="h-5 w-5" />
-            </Button>
-          </div>
+          {/* ✅ Hide for suppliers */}
+          {!isSupplier && (
+            <>
+              <div className="flex flex-wrap gap-4 mb-4">
+                <Button
+                  className="flex-1 py-3 transition-transform hover:scale-[1.02]"
+                  onClick={addToCart}
+                  disabled={!inStock}
+                >
+                  <ShoppingCart className="mr-2 h-5 w-5" />
+                  Add to Cart
+                </Button>
+                <Button variant="outline" className="px-4 py-3 hover:bg-gray-50">
+                  <Heart className="h-5 w-5" />
+                </Button>
+                <Button variant="outline" className="px-4 py-3 hover:bg-gray-50">
+                  <Share2 className="h-5 w-5" />
+                </Button>
+              </div>
 
-          {/* Buy Now */}
-          <Button
-            className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-transform hover:scale-[1.02]"
-            onClick={() => {
-              const checkoutProduct = { ...product, quantity };
-              localStorage.setItem('checkoutItem', JSON.stringify(checkoutProduct));
-              router.push('/checkout');
-            }}
-            disabled={!inStock}
-          >
-            Buy Now
-          </Button>
+              <Button
+                className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-transform hover:scale-[1.02]"
+                onClick={handleBuyNow}
+                disabled={!inStock}
+              >
+                Buy Now
+              </Button>
+            </>
+          )}
 
-          {/* Product Benefits */}
+          {/* Features */}
           <div className="border-t pt-6 mt-6 text-sm text-gray-700 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex items-center">
               <Truck className="h-5 w-5 text-blue-600 mr-2" /> Free Shipping
@@ -294,19 +317,10 @@ export default function ProductDetails() {
           </div>
         </div>
       </div>
-
-      {/* Product Details */}
-      <div className="mt-16 border-t pt-8">
-        <h2 className="text-2xl font-bold mb-6">Product Details</h2>
-        <p className="text-gray-700 leading-relaxed">
-          {product.longDescription ||
-            `The ${product.name} is crafted with precision using high-quality materials. 
-            Designed for durability and performance, it’s perfect for everyday use.`}
-        </p>
-      </div>
     </motion.div>
   );
 }
+
 
 
 // 'use client';
@@ -314,14 +328,20 @@ export default function ProductDetails() {
 // import { useState, useEffect } from 'react';
 // import Image from 'next/image';
 // import Link from 'next/link';
-// import { useParams } from 'next/navigation';
+// import { useParams, useRouter } from 'next/navigation';
 // import {
-//   Star, ShoppingCart, Heart, Share2,
-//   ChevronRight, Truck, RotateCcw, Shield
+//   Star,
+//   ShoppingCart,
+//   Heart,
+//   Share2,
+//   ChevronRight,
+//   Truck,
+//   RotateCcw,
+//   Shield,
 // } from 'lucide-react';
 // import { Button } from '@/components/button';
-// import { useRouter } from 'next/navigation';
 // import { formatPrice } from '@/utils/formatPrice';
+// import { motion, AnimatePresence } from 'framer-motion';
 
 // export default function ProductDetails() {
 //   const params = useParams();
@@ -332,7 +352,7 @@ export default function ProductDetails() {
 //   const [selectedImage, setSelectedImage] = useState(0);
 //   const [quantity, setQuantity] = useState(1);
 
-//   // ✅ Fetch product dynamically (ready for MySQL API)
+//   // Fetch product data dynamically
 //   useEffect(() => {
 //     const fetchProduct = async () => {
 //       try {
@@ -347,11 +367,10 @@ export default function ProductDetails() {
 //         setLoading(false);
 //       }
 //     };
-
 //     fetchProduct();
 //   }, [params.id]);
 
-//   // ✅ Handle Loading State
+//   // Handle loading state (Skeleton UI)
 //   if (loading) {
 //     return (
 //       <div className="container mx-auto px-4 py-8 animate-pulse">
@@ -369,12 +388,14 @@ export default function ProductDetails() {
 //     );
 //   }
 
-//   // ✅ Handle Error State
+//   // Handle error state
 //   if (error || !product) {
 //     return (
 //       <div className="container mx-auto px-4 py-16 text-center">
 //         <h1 className="text-3xl font-bold mb-4">Product Not Found</h1>
-//         <p className="mb-8">{error || "The product you're looking for doesn't exist or has been removed."}</p>
+//         <p className="mb-8 text-gray-600">
+//           {error || "The product you're looking for doesn't exist or has been removed."}
+//         </p>
 //         <Link href="/products">
 //           <Button>Browse All Products</Button>
 //         </Link>
@@ -382,7 +403,7 @@ export default function ProductDetails() {
 //     );
 //   }
 
-//   // ✅ Derived values
+//   // Derived values
 //   const images = product.images?.length ? product.images : ['/placeholder.jpg'];
 //   const inStock = product.stock > 0;
 //   const discount = product.discountPrice
@@ -400,16 +421,24 @@ export default function ProductDetails() {
 //   };
 
 //   return (
-//     <div className="container mx-auto px-4 py-8">
+//     <motion.div
+//       className="container mx-auto px-4 py-8"
+//       initial={{ opacity: 0, y: 10 }}
+//       animate={{ opacity: 1, y: 0 }}
+//       transition={{ duration: 0.4, ease: 'easeOut' }}
+//     >
 //       {/* Breadcrumb */}
 //       <div className="flex items-center text-sm text-gray-500 mb-8">
-//         <Link href="/" className="hover:text-blue-600">Home</Link>
+//         <Link href="/" className="hover:text-blue-600 transition-colors">Home</Link>
 //         <ChevronRight className="h-4 w-4 mx-2" />
-//         <Link href="/products" className="hover:text-blue-600">Products</Link>
+//         <Link href="/products" className="hover:text-blue-600 transition-colors">Products</Link>
 //         {product.category && (
 //           <>
 //             <ChevronRight className="h-4 w-4 mx-2" />
-//             <Link href={`/category/${product.category?.toLowerCase()}`} className="hover:text-blue-600">
+//             <Link
+//               href={`/category/${product.category?.toLowerCase()}`}
+//               className="hover:text-blue-600 transition-colors"
+//             >
 //               {product.category}
 //             </Link>
 //           </>
@@ -422,29 +451,41 @@ export default function ProductDetails() {
 //         {/* Product Images */}
 //         <div className="w-full md:w-1/2">
 //           <div className="relative h-96 bg-white rounded-lg overflow-hidden border">
-//             <Image
-//               src={images[selectedImage]}
-//               alt={product.name}
-//               fill
-//               className="object-contain"
-//               priority
-//             />
+//             <AnimatePresence mode="wait">
+//               <motion.div
+//                 key={selectedImage}
+//                 initial={{ opacity: 0 }}
+//                 animate={{ opacity: 1 }}
+//                 exit={{ opacity: 0 }}
+//                 transition={{ duration: 0.3 }}
+//                 className="absolute inset-0"
+//               >
+//                 <Image
+//                   src={images[selectedImage]}
+//                   alt={product.name}
+//                   fill
+//                   className="object-contain"
+//                   priority
+//                 />
+//               </motion.div>
+//             </AnimatePresence>
 //           </div>
 
-//           {/* Thumbnail Images */}
 //           {images.length > 1 && (
-//             <div className="flex mt-4 gap-2">
+//             <div className="flex mt-4 gap-2 justify-center">
 //               {images.map((img, index) => (
 //                 <div
 //                   key={index}
-//                   className={`relative w-20 h-20 border rounded cursor-pointer transition-all ${
-//                     selectedImage === index ? 'border-blue-500 ring-2 ring-blue-300' : 'border-gray-200'
+//                   className={`relative w-20 h-20 border rounded cursor-pointer transition-all duration-200 hover:scale-105 ${
+//                     selectedImage === index
+//                       ? 'border-blue-500 ring-2 ring-blue-300'
+//                       : 'border-gray-200'
 //                   }`}
 //                   onClick={() => setSelectedImage(index)}
 //                 >
 //                   <Image
 //                     src={img}
-//                     alt={`${product.name} - view ${index + 1}`}
+//                     alt={`${product.name} - ${index + 1}`}
 //                     fill
 //                     className="object-contain"
 //                   />
@@ -464,8 +505,10 @@ export default function ProductDetails() {
 //               {[...Array(5)].map((_, i) => (
 //                 <Star
 //                   key={i}
-//                   className={`h-5 w-5 ${
-//                     i < Math.floor(product.rating) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'
+//                   className={`h-5 w-5 transition-colors ${
+//                     i < Math.floor(product.rating)
+//                       ? 'text-yellow-400 fill-yellow-400'
+//                       : 'text-gray-300'
 //                   }`}
 //                 />
 //               ))}
@@ -504,10 +547,10 @@ export default function ProductDetails() {
 
 //           {/* Quantity */}
 //           <div className="flex items-center mb-6">
-//             <span className="mr-4 text-gray-700">Quantity:</span>
-//             <div className="flex items-center border rounded-md">
+//             <span className="mr-4 text-gray-700 font-medium">Quantity:</span>
+//             <div className="flex items-center border rounded-md shadow-sm">
 //               <button
-//                 className="px-3 py-1 border-r disabled:opacity-40"
+//                 className="px-3 py-1 border-r disabled:opacity-50 hover:bg-gray-100 transition"
 //                 onClick={() => handleQuantityChange(-1)}
 //                 disabled={quantity <= 1}
 //               >
@@ -515,14 +558,18 @@ export default function ProductDetails() {
 //               </button>
 //               <span className="px-4 py-1">{quantity}</span>
 //               <button
-//                 className="px-3 py-1 border-l disabled:opacity-40"
+//                 className="px-3 py-1 border-l disabled:opacity-50 hover:bg-gray-100 transition"
 //                 onClick={() => handleQuantityChange(1)}
 //                 disabled={quantity >= product.stock}
 //               >
 //                 +
 //               </button>
 //             </div>
-//             <span className={`ml-4 font-medium ${inStock ? 'text-green-600' : 'text-red-500'}`}>
+//             <span
+//               className={`ml-4 font-semibold ${
+//                 inStock ? 'text-green-600' : 'text-red-500'
+//               }`}
+//             >
 //               {inStock ? 'In Stock' : 'Out of Stock'}
 //             </span>
 //           </div>
@@ -530,28 +577,28 @@ export default function ProductDetails() {
 //           {/* Actions */}
 //           <div className="flex flex-wrap gap-4 mb-4">
 //             <Button
-//               className="flex-1 py-3"
+//               className="flex-1 py-3 transition-transform hover:scale-[1.02]"
 //               onClick={addToCart}
 //               disabled={!inStock}
 //             >
 //               <ShoppingCart className="mr-2 h-5 w-5" />
 //               Add to Cart
 //             </Button>
-//             <Button variant="outline" className="px-4 py-3">
+//             <Button variant="outline" className="px-4 py-3 hover:bg-gray-50">
 //               <Heart className="h-5 w-5" />
 //             </Button>
-//             <Button variant="outline" className="px-4 py-3">
+//             <Button variant="outline" className="px-4 py-3 hover:bg-gray-50">
 //               <Share2 className="h-5 w-5" />
 //             </Button>
 //           </div>
 
-//           {/* ✅ Buy Now Button */}
+//           {/* Buy Now */}
 //           <Button
-//             className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-transform transform hover:scale-[1.02]"
+//             className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-transform hover:scale-[1.02]"
 //             onClick={() => {
 //               const checkoutProduct = { ...product, quantity };
 //               localStorage.setItem('checkoutItem', JSON.stringify(checkoutProduct));
-//               router.push('/checkout'); 
+//               router.push('/checkout');
 //             }}
 //             disabled={!inStock}
 //           >
@@ -559,20 +606,15 @@ export default function ProductDetails() {
 //           </Button>
 
 //           {/* Product Benefits */}
-//           <div className="border-t pt-6">
-//             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-700">
-//               <div className="flex items-center">
-//                 <Truck className="h-5 w-5 text-blue-600 mr-2" />
-//                 Free Shipping
-//               </div>
-//               <div className="flex items-center">
-//                 <RotateCcw className="h-5 w-5 text-blue-600 mr-2" />
-//                 30-Day Returns
-//               </div>
-//               <div className="flex items-center">
-//                 <Shield className="h-5 w-5 text-blue-600 mr-2" />
-//                 2-Year Warranty
-//               </div>
+//           <div className="border-t pt-6 mt-6 text-sm text-gray-700 grid grid-cols-1 md:grid-cols-3 gap-4">
+//             <div className="flex items-center">
+//               <Truck className="h-5 w-5 text-blue-600 mr-2" /> Free Shipping
+//             </div>
+//             <div className="flex items-center">
+//               <RotateCcw className="h-5 w-5 text-blue-600 mr-2" /> 30-Day Returns
+//             </div>
+//             <div className="flex items-center">
+//               <Shield className="h-5 w-5 text-blue-600 mr-2" /> 2-Year Warranty
 //             </div>
 //           </div>
 //         </div>
@@ -587,6 +629,7 @@ export default function ProductDetails() {
 //             Designed for durability and performance, it’s perfect for everyday use.`}
 //         </p>
 //       </div>
-//     </div>
+//     </motion.div>
 //   );
 // }
+

@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useCart } from '@/hooks/useCart';
 import useSWR from 'swr';
+import { useAuth } from '@/app/contexts/AuthContext'; 
 import { Sliders, ChevronDown, X } from 'lucide-react';
 import { Button } from '@/components/button';
 import ProductCard from '@/components/product-card';
@@ -14,13 +16,15 @@ import { useSearchParams } from 'next/navigation';
 const fetcher = (url) => fetch(url).then((r) => r.json());
 
 export default function ProductsPage() {
+  const { user } = useAuth(); // ✅ ADD THIS LINE
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
   const [sortBy, setSortBy] = useState('featured');
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [categories, setCategories] = useState([]);
-
+  // ✅ Access all cart helpers once
+  const { addToCart, saveCart, clearCart, getItemsCount } = useCart();
   const searchParams = useSearchParams();
   const searchQuery = searchParams.get('search') || '';
   const limit = 8;
@@ -65,25 +69,13 @@ export default function ProductsPage() {
     return data.products;
   }, [data?.products]);
 
-  // ✅ Add to Cart
-  const addToCart = async (product) => {
-    const userData = JSON.parse(localStorage.getItem('user'));
-    if (!userData) return toast.error('Please login to add products to cart');
 
-    const cartKey = `cart_${userData.email}`;
-    const cart = JSON.parse(localStorage.getItem(cartKey)) || [];
-    const index = cart.findIndex((item) => item.id === product.id);
-
-    if (index !== -1) cart[index].quantity += 1;
-    else cart.push({ ...product, quantity: 1 });
-
-    localStorage.setItem(cartKey, JSON.stringify(cart));
+  const handleAddToCart = (product) => {
+    addToCart(product);
     triggerCartConfetti(0.9, 0.1);
-
-    await cartControls.start({ scale: 1.2, transition: { duration: 0.15 } });
-    await cartControls.start({ scale: 1, transition: { type: 'spring', stiffness: 200 } });
     toast.success(`${product.name} added to your cart 🛒`);
   };
+
 
   const toggleCategory = (slug) => {
     setSelectedCategories((prev) =>
@@ -173,7 +165,7 @@ export default function ProductsPage() {
                 className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
               >
                 {filteredProducts.map((product) => (
-                  <ProductCard key={product.id} product={product} onAddToCart={() => addToCart(product)} />
+                  <ProductCard key={product.id} product={product} onAddToCart={() => addToCart(product, user)} />
                 ))}
               </motion.div>
 
@@ -298,8 +290,6 @@ function FilterSidebar({ categories, selectedCategories, toggleCategory, priceRa
     </div>
   );
 }
-
-
 
 
 

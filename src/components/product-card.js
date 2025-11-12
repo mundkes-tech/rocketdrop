@@ -22,7 +22,7 @@ export default function ProductCard({ product, onAddToCart }) {  const [isAnimat
   const handleAddToCart = async () => {
     if (isAnimating) return;
     setIsAnimating(true);
-    await onAddToCart(product);
+    await onAddToCart();
     setTimeout(() => setIsAnimating(false), 1500);
   };
 

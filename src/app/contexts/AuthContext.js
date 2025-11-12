@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { mergeGuestCart } from '@/hooks/useCart'; // ✅ import merge helper
 
 const AuthContext = createContext();
 
@@ -53,12 +54,22 @@ export const AuthProvider = ({ children }) => {
     else localStorage.removeItem('user');
   }, [user]);
 
-  // ✅ Login handler
+  // ✅ Login handler (with cart merge)
   const login = (userData) => {
     if (!userData?.role || !userData?.email) return;
-    setUser(userData);
 
-    // Redirect after login
+    // 1️⃣ Save user to state & localStorage
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+
+    // 2️⃣ Merge guest cart → user cart (e.g. cart_guest → cart_user@gmail.com)
+    try {
+      mergeGuestCart(userData);
+    } catch (err) {
+      console.error('Error merging guest cart:', err);
+    }
+
+    // 3️⃣ Redirect user after login
     if (userData.role === 'supplier') router.replace('/supplier-dashboard');
     else router.replace('/user-dashboard');
   };
@@ -73,7 +84,7 @@ export const AuthProvider = ({ children }) => {
     else router.push('/login');
   };
 
-  // 🌀 Optional loader (for initialization)
+  // 🌀 Loader while initializing
   if (!isInitialized) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
@@ -82,7 +93,7 @@ export const AuthProvider = ({ children }) => {
     );
   }
 
-  // ✅ Provide all auth values
+  // ✅ Provide context
   return (
     <AuthContext.Provider
       value={{
@@ -90,7 +101,7 @@ export const AuthProvider = ({ children }) => {
         login,
         logout,
         isLoggedIn: !!user,
-        isInitialized, // 👈 important for ProtectedRoute
+        isInitialized,
       }}
     >
       {children}
@@ -100,6 +111,7 @@ export const AuthProvider = ({ children }) => {
 
 // ✅ Hook for easy access
 export const useAuth = () => useContext(AuthContext);
+
 
 
 
