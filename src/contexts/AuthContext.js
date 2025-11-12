@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { mergeGuestCart } from '@/hooks/useCart'; // ✅ import merge helper
+import { mergeGuestCartToUser } from '@/hooks/useCart';
 
 const AuthContext = createContext();
 
@@ -64,7 +64,7 @@ export const AuthProvider = ({ children }) => {
 
     // 2️⃣ Merge guest cart → user cart (e.g. cart_guest → cart_user@gmail.com)
     try {
-      mergeGuestCart(userData);
+      mergeGuestCartToUser(userData);
     } catch (err) {
       console.error('Error merging guest cart:', err);
     }
