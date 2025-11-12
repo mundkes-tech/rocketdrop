@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useCart } from '@/hooks/useCart';
 import useSWR from 'swr';
-import { useAuth } from '@/app/contexts/AuthContext'; 
+import { useAuth } from '@/contexts/AuthContext'; 
 import { Sliders, ChevronDown, X } from 'lucide-react';
 import { Button } from '@/components/button';
 import ProductCard from '@/components/product-card';

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Trash2, ArrowLeft, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/button';
 import { useCart } from '@/hooks/useCart';
-import { useAuth } from '@/app/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function CartPage() {
   const { user } = useAuth();

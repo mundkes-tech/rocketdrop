@@ -5,8 +5,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { ShoppingCart, Menu, X, User, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useCartContext } from '@/app/contexts/CartContext';
-import { useAuth } from '@/app/contexts/AuthContext';
+import { useCartContext } from '@/contexts/CartContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/button';
 
 export function Navigation() {

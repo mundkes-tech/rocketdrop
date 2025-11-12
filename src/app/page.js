@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useAuth } from '@/app/contexts/AuthContext'; // 👈 import your auth context
+import { useAuth } from '@/contexts/AuthContext'; // 👈 import your auth context
 
 export default function HomePage() {
   const { isLoggedIn, user } = useAuth(); // 👈 this gives us current login info

@@ -5,6 +5,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 import { 
   Rocket, 
   Package, 
@@ -197,9 +198,9 @@ export default function AboutPage() {
         <p className="text-gray-600 mb-8">
           Discover trending, high-quality products from around the globe — delivered right to your doorstep.
         </p>
-        <a href="/products" className="inline-block bg-blue-600 text-white px-8 py-3 rounded-md text-lg font-medium hover:bg-blue-700 transition-colors">
+        <Link href="/products" className="inline-block bg-blue-600 text-white px-8 py-3 rounded-md text-lg font-medium hover:bg-blue-700 transition-colors">
           Explore Products
-        </a>
+        </Link>
       </motion.div>
     </div>
   );

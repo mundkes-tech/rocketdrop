@@ -1,7 +1,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import { Footer } from "@/components/footer";
-import { AuthProvider } from '@/app/contexts/AuthContext';
-import { CartProvider } from '@/app/contexts/CartContext'; // 👈 import here
+import { AuthProvider } from '@/contexts/AuthContext';
+import { CartProvider } from '@/contexts/CartContext'; // 👈 import here
 import ConditionalNavigation from '@/components/ConditionalNavigation';
 import "./globals.css";
 

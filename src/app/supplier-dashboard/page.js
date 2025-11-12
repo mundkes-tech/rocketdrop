@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { useAuth } from '@/app/contexts/AuthContext'; // ✅ use your global auth
+import { useAuth } from '@/contexts/AuthContext'; // ✅ use your global auth
 
 export default function SupplierDashboardPage() {
   const { user, isLoggedIn } = useAuth(); // ✅ Context-aware login

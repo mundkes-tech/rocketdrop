@@ -4,7 +4,7 @@ import Image from 'next/image';
 import { Loader2, PackageX, ArrowUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/button';
-import { useAuth } from '@/app/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function MyOrdersPage() {
   const { user } = useAuth();

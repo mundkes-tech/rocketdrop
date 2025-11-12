@@ -18,7 +18,7 @@ import {
 import { Button } from '@/components/button';
 import { formatPrice } from '@/utils/formatPrice';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '@/context/AuthContext'; // ✅ Import auth context
+import { useAuth } from '../../../contexts/AuthContext';
 
 export default function ProductDetails() {
   const params = useParams();

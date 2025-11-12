@@ -2,7 +2,7 @@
 
 import { Navigation } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { AuthProvider } from '@/app/contexts/AuthContext';
+import { AuthProvider } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 export default function RootLayoutClient({ children }) {
