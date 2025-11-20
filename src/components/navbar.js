@@ -22,7 +22,7 @@ export function Navigation() {
   const toggleMobileMenu = () => setMobileMenuOpen(!mobileMenuOpen);
 
   const navLinks = [
-    { href: '/', label: 'Home' },
+    { href: '/user-dashboard', label: 'Home' },
     { href: '/about', label: 'About' },
     { href: '/products', label: 'All Products' },
     { href: '/myorders', label: 'My Orders' },

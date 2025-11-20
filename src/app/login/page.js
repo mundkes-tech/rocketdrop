@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [role, setRole] = useState('user');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [admincode, setAdminCode] = useState('');   // ✅ FIXED
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -26,71 +27,68 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     console.clear();
-    console.log('🟦 Login attempt started...');
 
     if (!email || !password) {
       setError('Please fill in all fields');
       return;
     }
 
+    if (role === 'admin' && !admincode) {
+      setError('Admin access code required');
+      return;
+    }
+
     try {
       setLoading(true);
-      console.log('📡 Sending login request to /api/login...');
+
+      const bodyData =
+        role === 'admin'
+          ? { email, password, role, admincode }
+          : { email, password, role };
 
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, role }),
+        body: JSON.stringify(bodyData),
       });
 
       const data = await res.json();
-      console.log('🧠 API Response:', data);
 
       if (!res.ok || !data.success) {
-        setError(data.message || data.error || 'Invalid credentials');
+        setError(data.message || 'Invalid credentials');
         return;
       }
 
-      // ✅ Extract and validate user data
       const userData = data.data?.user;
+
       if (!userData) {
-        setError('Unexpected server response. Please try again.');
+        setError('Unexpected server response. Try again.');
         return;
       }
 
-      // ✅ Save user locally + in AuthContext
-      login(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
-      console.log('💾 User saved to localStorage:', userData);
+      // ❌ DO NOT STORE ADMIN LOGIN
+      if (userData.role === 'user') {
+        localStorage.setItem('user', JSON.stringify(userData));
+      }
 
-      // ✅ Check if user had a saved redirect (e.g., from "Buy Now" or Profile)
-      const storedRedirect = localStorage.getItem('redirectAfterLogin');
-      if (storedRedirect) {
-        console.log(`🚀 Redirecting to saved route: ${storedRedirect}`);
-        localStorage.removeItem('redirectAfterLogin');
-        setTimeout(() => {
-          router.replace(storedRedirect);
-        }, 1000);
-      } else if (userData.role === 'supplier') {
-        console.log('🚀 Redirecting to supplier dashboard');
-        setTimeout(() => {
-          router.replace('/supplier-dashboard');
-        }, 1000);
+      // Save inside context (for temporary state)
+      login(userData);
+
+      // Redirection rules:
+      if (userData.role === 'admin') {
+        router.replace('/admin-dashboard');
       } else {
-        console.log('🚀 Redirecting to user dashboard');
-        setTimeout(() => {
-          router.replace('/user-dashboard');
-        }, 1000);
+        router.replace('/user-dashboard');
       }
     } catch (err) {
-      console.error('💥 Unexpected error during login:', err);
-      setError('Something went wrong. Please try again later.');
+      console.error('💥 Login error:', err);
+      setError('Something went wrong. Try again later.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ Success screen animation
+  // SUCCESS SCREEN
   if (isLoggedIn) {
     return (
       <div className="relative flex flex-col items-center justify-center h-screen bg-gradient-to-br from-[#0A1128] via-[#001F54] to-[#034078] overflow-hidden">
@@ -112,19 +110,19 @@ export default function LoginPage() {
     );
   }
 
-  // 🧩 Main Login Form
+  // MAIN FORM
   return (
     <div className="flex flex-col md:flex-row w-full h-screen">
-      {/* Left Panel (Form) */}
+
+      {/* LEFT PANEL */}
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         className="relative w-full md:w-1/2 h-screen flex items-center justify-center bg-gradient-to-br from-[#0A1128] via-[#001F54] to-[#034078] p-8 sm:p-12 shadow-2xl"
       >
-        {/* 🧭 Back to Dashboard Button */}
         <button
           type="button"
-          onClick={() => router.push('/user-dashboard')}
+          onClick={() => router.push('/')}
           className="absolute top-6 left-6 flex items-center gap-2 text-blue-200 hover:text-blue-400 transition cursor-pointer"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
@@ -134,23 +132,23 @@ export default function LoginPage() {
         </button>
 
         <div className="w-full max-w-md text-white">
+
           <h2 className="text-3xl sm:text-4xl font-bold text-center mb-8">
             Login to RocketDrop
           </h2>
 
-          {/* Role Selector */}
+          {/* ROLE SELECTOR */}
           <div className="flex justify-center mb-6 space-x-4">
-            {['user', 'supplier'].map((r) => (
+            {['user', 'admin'].map((r) => (
               <button
                 key={r}
-                type="button"
                 onClick={() => setRole(r)}
                 className={`px-6 py-3 rounded-full font-medium border cursor-pointer transition ${role === r
-                    ? 'bg-blue-600 border-blue-400 text-white shadow-lg'
-                    : 'bg-white/10 text-blue-200 border-blue-300 hover:bg-white/20'
+                  ? 'bg-blue-600 border-blue-400 text-white'
+                  : 'bg-white/10 text-blue-200 border-blue-300 hover:bg-white/20'
                   }`}
               >
-                {r.charAt(0).toUpperCase() + r.slice(1)}
+                {r.toUpperCase()}
               </button>
             ))}
           </div>
@@ -158,15 +156,16 @@ export default function LoginPage() {
           {error && <p className="text-red-400 text-center mb-4">{error}</p>}
 
           <form onSubmit={handleLogin} className="grid grid-cols-1 gap-6">
+
             <FloatingInput
               name="email"
               type="email"
               label="Email*"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              autoFocus
               required
             />
+
             <FloatingInput
               name="password"
               type="password"
@@ -175,40 +174,42 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+
+            {role === 'admin' && (
+              <FloatingInput
+                name="admincode"
+                type="text"
+                label="Admin Access Code*"
+                value={admincode}
+                onChange={(e) => setAdminCode(e.target.value)}
+                required
+              />
+            )}
+
             <button
               type="submit"
               disabled={loading}
               className={`mt-4 py-3 rounded-full font-semibold transition shadow-md cursor-pointer ${loading
-                  ? 'bg-blue-400 opacity-70 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-blue-500 to-cyan-400 text-white hover:scale-[1.02]'
+                ? 'bg-blue-400 opacity-70'
+                : 'bg-gradient-to-r from-blue-500 to-cyan-400 text-white hover:scale-[1.02]'
                 }`}
             >
               {loading ? 'Logging in...' : 'Login'}
             </button>
+
           </form>
 
           <p className="text-center mt-6 text-blue-200 text-sm">
             New user?{' '}
-            <Link
-              href="/register"
-              className="text-blue-300 font-medium hover:underline cursor-pointer"
-            >
+            <Link href="/register" className="text-blue-300 font-medium hover:underline cursor-pointer">
               Sign up
             </Link>
           </p>
 
-          <p className="text-center mt-2 text-sm">
-            <Link
-              href="/forgot-password"
-              className="text-blue-300 hover:underline cursor-pointer"
-            >
-              Forgot password?
-            </Link>
-          </p>
         </div>
       </motion.div>
 
-      {/* Right Panel (Illustration) */}
+      {/* RIGHT PANEL */}
       <div className="hidden md:flex w-1/2 h-screen relative bg-gradient-to-br from-[#004a7c] to-[#e8f1f5] overflow-hidden p-12">
         <Image
           src="/Images/login.jpg"
@@ -220,16 +221,17 @@ export default function LoginPage() {
         <div className="flex flex-col items-center justify-center text-center z-10 w-full">
           <h1 className="text-6xl font-bold mb-4 text-[#011f4b]">Welcome Back!</h1>
           <p className="text-lg text-[#011f4b]">
-            Login to your RocketDrop account and continue shopping or selling globally.
+            Login to your RocketDrop account.
           </p>
         </div>
       </div>
+
     </div>
   );
 }
 
-// 💡 Floating Label Input Component
-function FloatingInput({ name, type = 'text', label, value, onChange, required, autoFocus }) {
+// Floating Input Component
+function FloatingInput({ name, type = 'text', label, value, onChange, required }) {
   return (
     <div className="relative w-full">
       <input
@@ -238,15 +240,12 @@ function FloatingInput({ name, type = 'text', label, value, onChange, required, 
         value={value}
         onChange={onChange}
         required={required}
-        autoFocus={autoFocus}
         placeholder=" "
-        className="peer w-full border border-white/20 bg-white/10 rounded-lg px-4 pt-5 pb-3 text-white placeholder-transparent focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-200"
+        className="peer w-full border border-white/20 bg-white/10 rounded-lg px-4 pt-5 pb-3 text-white placeholder-transparent focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
       />
-      <label className="absolute left-4 top-3 text-blue-200 text-sm transition-all duration-200 peer-placeholder-shown:top-5 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-sm peer-focus:text-blue-300">
+      <label className="absolute left-4 top-3 text-blue-200 text-sm transition-all peer-placeholder-shown:top-5 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-sm peer-focus:text-blue-300">
         {label}
       </label>
     </div>
   );
 }
-
-
