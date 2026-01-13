@@ -23,11 +23,15 @@ export async function GET(req) {
       values.push(status);
     }
 
+    console.log('📋 Fetching orders:', { user_id, status, page, limit, whereClause, values });
+
     // 🧮 Count total orders
     const [[{ total }]] = await db.query(
       `SELECT COUNT(*) AS total FROM orders o ${whereClause}`,
       values
     );
+    
+    console.log('📊 Total orders found:', total);
 
     // 🧾 Fetch orders with pagination
     const [orders] = await db.query(

@@ -13,6 +13,10 @@ import {
   Clock,
   AlertCircle,
   X,
+  XCircle,
+  CreditCard,
+  DollarSign,
+  Download,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -23,6 +27,7 @@ const statusOptions = [
   { value: 'processing', label: 'Processing', icon: Package, color: 'text-blue-400' },
   { value: 'shipped', label: 'Shipped', icon: Truck, color: 'text-purple-400' },
   { value: 'delivered', label: 'Delivered', icon: CheckCircle, color: 'text-green-400' },
+  { value: 'cancelled', label: 'Cancelled', icon: XCircle, color: 'text-red-400' },
 ];
 
 export default function AdminOrders() {
@@ -84,6 +89,37 @@ export default function AdminOrders() {
   const getStatusColor = (status) => {
     const statusOption = statusOptions.find(opt => opt.value === status);
     return statusOption ? statusOption.color : 'text-gray-400';
+  };
+
+  const handleDownloadInvoice = async (orderId) => {
+    try {
+      toast.loading('Generating invoice...', { id: 'invoice-download' });
+      
+      const response = await fetch(`/api/orders/${orderId}/invoice`, {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate invoice');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice-${orderId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Invoice downloaded successfully!', { id: 'invoice-download' });
+    } catch (error) {
+      console.error('Error downloading invoice:', error);
+      toast.error('Failed to download invoice', { id: 'invoice-download' });
+    }
   };
 
   if (error) {
@@ -193,26 +229,41 @@ export default function AdminOrders() {
                     </td>
                     <td className="px-6 py-4 font-medium text-white">₹{order.total}</td>
                     <td className="px-6 py-4">
-                      <select
-                        value={order.status || 'pending'}
-                        onChange={(e) => handleStatusUpdate(order.id, e.target.value)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium border-none bg-transparent ${getStatusColor(order.status)} focus:ring-2 focus:ring-blue-500`}
-                      >
-                        {statusOptions.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
+                      {order.status === 'cancelled' ? (
+                        <div className="px-3 py-1 rounded-full text-xs font-medium bg-red-900 text-red-200 inline-block">
+                          {order.status}
+                        </div>
+                      ) : (
+                        <select
+                          value={order.status || 'pending'}
+                          onChange={(e) => handleStatusUpdate(order.id, e.target.value)}
+                          className={`px-3 py-1 rounded-full text-xs font-medium border-none bg-transparent ${getStatusColor(order.status)} focus:ring-2 focus:ring-blue-500 cursor-pointer`}
+                        >
+                          {statusOptions.filter(opt => opt.value !== 'cancelled').map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        onClick={() => setSelectedOrder(order)}
-                        className="p-2 text-blue-400 hover:text-blue-300 transition-colors duration-200"
-                        title="View Details"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setSelectedOrder(order)}
+                          className="p-2 text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                          title="View Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDownloadInvoice(order.id)}
+                          className="p-2 text-green-400 hover:text-green-300 transition-colors duration-200"
+                          title="Download Invoice"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </motion.tr>
                 );
@@ -263,15 +314,16 @@ export default function AdminOrders() {
                 <div>
                   <h3 className="text-lg font-semibold text-white mb-3">Order Details</h3>
                   <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-400">Date:</span> {new Date(selectedOrder.created_at).toLocaleString()}</p>
-                    <p><span className="text-gray-400">Total:</span> ₹{selectedOrder.total}</p>
-                    <p><span className="text-gray-400">Payment:</span> {selectedOrder.payment_method || 'COD'}</p>
+                    <p><span className="text-gray-400">Order ID:</span> <span className="text-white">#{selectedOrder.id}</span></p>
+                    <p><span className="text-gray-400">Date:</span> <span className="text-white">{new Date(selectedOrder.created_at).toLocaleString()}</span></p>
+                    <p><span className="text-gray-400">Total:</span> <span className="text-white font-medium">₹{selectedOrder.total}</span></p>
                     <p><span className="text-gray-400">Status:</span>
-                      <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
-                        selectedOrder.status === 'delivered' ? 'bg-green-100 text-green-800' :
-                        selectedOrder.status === 'shipped' ? 'bg-blue-100 text-blue-800' :
-                        selectedOrder.status === 'processing' ? 'bg-purple-100 text-purple-800' :
-                        'bg-yellow-100 text-yellow-800'
+                      <span className={`ml-2 px-3 py-1 rounded-full text-xs font-medium ${
+                        selectedOrder.status === 'delivered' ? 'bg-green-900 text-green-200' :
+                        selectedOrder.status === 'shipped' ? 'bg-blue-900 text-blue-200' :
+                        selectedOrder.status === 'processing' ? 'bg-purple-900 text-purple-200' :
+                        selectedOrder.status === 'cancelled' ? 'bg-red-900 text-red-200' :
+                        'bg-yellow-900 text-yellow-200'
                       }`}>
                         {selectedOrder.status || 'pending'}
                       </span>
@@ -280,24 +332,64 @@ export default function AdminOrders() {
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold text-white mb-3">Customer Info</h3>
+                  <h3 className="text-lg font-semibold text-white mb-3">Payment & Customer</h3>
                   <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-400">Name:</span> {selectedOrder.user?.name || 'N/A'}</p>
-                    <p><span className="text-gray-400">Email:</span> {selectedOrder.user?.email || 'N/A'}</p>
+                    <p><span className="text-gray-400">Customer:</span> <span className="text-white">{selectedOrder.user?.name || 'N/A'}</span></p>
+                    <p><span className="text-gray-400">Email:</span> <span className="text-white">{selectedOrder.user?.email || 'N/A'}</span></p>
+                    <p><span className="text-gray-400">Payment Status:</span>
+                      <span className={`ml-2 px-2 py-1 rounded text-xs font-medium ${
+                        selectedOrder.payment_status === 'paid' ? 'bg-green-900 text-green-200' :
+                        selectedOrder.payment_status === 'refunded' ? 'bg-blue-900 text-blue-200' :
+                        'bg-yellow-900 text-yellow-200'
+                      }`}>
+                        {selectedOrder.payment_status || 'pending'}
+                      </span>
+                    </p>
                   </div>
                 </div>
               </div>
 
+              {/* Cancellation Info */}
+              {selectedOrder.status === 'cancelled' && (
+                <div className="bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-red-200 mb-3 flex items-center">
+                    <XCircle className="w-5 h-5 mr-2" />
+                    Cancellation Details
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <p><span className="text-red-300">Reason:</span> <span className="text-white">{selectedOrder.cancellation_reason || 'Not provided'}</span></p>
+                    <p><span className="text-red-300">Cancelled At:</span> <span className="text-white">{selectedOrder.cancelled_at ? new Date(selectedOrder.cancelled_at).toLocaleString() : 'N/A'}</span></p>
+                  </div>
+                </div>
+              )}
+
+              {/* Refund Info */}
+              {selectedOrder.payment_status === 'refunded' && (
+                <div className="bg-blue-900 bg-opacity-30 border border-blue-500 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-blue-200 mb-3 flex items-center">
+                    <DollarSign className="w-5 h-5 mr-2" />
+                    Refund Information
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <p><span className="text-blue-300">Refund Amount:</span> <span className="text-white font-medium">₹{selectedOrder.total}</span></p>
+                    <p><span className="text-blue-300">Refund Status:</span>
+                      <span className="ml-2 px-2 py-1 rounded text-xs font-medium bg-green-900 text-green-200">
+                        Processed
+                      </span>
+                    </p>
+                    <p><span className="text-blue-300">Timeline:</span> <span className="text-white">5-7 business days</span></p>
+                  </div>
+                </div>
+              )}
+
               {/* Shipping Address */}
-              {selectedOrder.shipping && (
+              {selectedOrder.shipping_address && (
                 <div>
                   <h3 className="text-lg font-semibold text-white mb-3">Shipping Address</h3>
                   <div className="bg-gray-700 p-4 rounded-lg text-sm">
-                    <p>{selectedOrder.shipping.fullName}</p>
-                    <p>{selectedOrder.shipping.address}</p>
-                    <p>{selectedOrder.shipping.city}, {selectedOrder.shipping.state} {selectedOrder.shipping.postalCode}</p>
-                    <p>{selectedOrder.shipping.country}</p>
-                    <p>Phone: {selectedOrder.shipping.phone}</p>
+                    <p className="text-white font-medium">{selectedOrder.recipient_name}</p>
+                    <p className="text-gray-300">{selectedOrder.shipping_address}</p>
+                    <p className="text-gray-300">Phone: {selectedOrder.phone}</p>
                   </div>
                 </div>
               )}

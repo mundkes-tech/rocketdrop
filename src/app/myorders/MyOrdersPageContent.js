@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import { Loader2, PackageX, ArrowUp, ShoppingBag, Truck, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Loader2, PackageX, ArrowUp, ShoppingBag, Truck, CheckCircle, XCircle, Clock, Trash2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/button'; // Assuming this is a professionally styled button
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'react-hot-toast';
 import Head from 'next/head';
 
 // --- Utility Functions/Components for Premium Design ---
@@ -76,6 +77,9 @@ export default function MyOrdersPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [hasMore, setHasMore] = useState(true);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [cancellingOrderId, setCancellingOrderId] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   const loaderRef = useRef(null);
 
@@ -87,19 +91,41 @@ export default function MyOrdersPage() {
         if (currentPage === 1) setLoading(true);
         else setLoadingMore(true);
 
-        const res = await fetch(
-          `/api/myorders?user_id=${user_id}&page=${currentPage}&limit=${limit}&status=${status}`,
-          { credentials: 'include' }
-        );
+        const url = `/api/myorders?user_id=${user_id}&page=${currentPage}&limit=${limit}&status=${status}`;
+        console.log('🔍 Fetching from URL:', url);
+        
+        const res = await fetch(url, { credentials: 'include' });
         const data = await res.json();
 
-        if (data.success) {
-          setOrders((prev) =>
-            append ? [...prev, ...data.orders] : data.orders
-          );
+        console.log('📦 API Response:', { status, data, ordersCount: data.orders?.length });
+
+        if (data.success && data.orders) {
+          // Remove duplicates based on order_id
+          const uniqueOrders = Array.isArray(data.orders) 
+            ? data.orders.filter((order, index, arr) => 
+                arr.findIndex(o => o.order_id === order.order_id) === index
+              )
+            : [];
+          
+          console.log('✅ Unique orders after dedup:', { before: data.orders?.length, after: uniqueOrders.length });
+          
+          setOrders((prev) => {
+            // Combine old and new orders
+            const combined = append ? [...prev, ...uniqueOrders] : uniqueOrders;
+            
+            // Deduplicate the combined array by order_id
+            const deduplicated = combined.filter((order, index, arr) =>
+              arr.findIndex(o => o.order_id === order.order_id) === index
+            );
+            
+            console.log('🔄 After combining with prev:', { combined: combined.length, deduplicated: deduplicated.length });
+            return deduplicated;
+          });
+          
           setTotalPages(data.totalPages);
           setHasMore(currentPage < data.totalPages);
         } else {
+          console.warn('⚠️ API returned success=false or missing orders:', data);
           setOrders([]);
           setHasMore(false);
         }
@@ -115,17 +141,17 @@ export default function MyOrdersPage() {
 
   // Load initial orders
   useEffect(() => {
-    if (user_id) fetchOrders(1);
-  }, [user_id]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Added eslint-disable-line for fetchOrders dependency, as it depends on statusFilter which changes.
-  // The fetchOrders call below handles statusFilter change correctly.
+    if (user_id) {
+      setPage(1);
+      fetchOrders(1, statusFilter, false);
+    }
+  }, [user_id, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle filter change
   const handleFilterChange = (status) => {
     setStatusFilter(status);
     setPage(1);
-    fetchOrders(1, status);
-    // Smooth scroll to top for a better filter UX
+    setOrders([]); // Clear orders immediately
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -170,6 +196,77 @@ export default function MyOrdersPage() {
   // Scroll to top
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Download invoice handler
+  const handleDownloadInvoice = async (orderId) => {
+    try {
+      toast.loading('Generating invoice...', { id: 'invoice-download' });
+      
+      const response = await fetch(`/api/orders/${orderId}/invoice`, {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate invoice');
+      }
+
+      // Create blob from response
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      // Create temporary link and trigger download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice-${orderId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Invoice downloaded successfully!', { id: 'invoice-download' });
+    } catch (error) {
+      console.error('Error downloading invoice:', error);
+      toast.error('Failed to download invoice', { id: 'invoice-download' });
+    }
+  };
+
+  // 🚫 Cancel Order
+  const handleCancelOrder = async () => {
+    if (!cancellingOrderId) return;
+
+    try {
+      setCancellingOrderId('processing');
+      
+      const res = await fetch('/api/orders/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          orderId: cancellingOrderId,
+          reason: cancelReason || 'Customer requested cancellation',
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        toast.success('Order cancelled successfully!');
+        setShowCancelModal(false);
+        setCancelReason('');
+        // Refresh orders list
+        fetchOrders(1, statusFilter, false);
+      } else {
+        toast.error(data.message || 'Failed to cancel order');
+      }
+    } catch (err) {
+      console.error('❌ Cancel order error:', err);
+      toast.error('Error cancelling order');
+    } finally {
+      setCancellingOrderId(null);
+    }
   };
 
   // --- Render Logic ---
@@ -283,11 +380,11 @@ export default function MyOrdersPage() {
               animate="visible"
               className="space-y-6"
             >
-              {orders.map((order) => {
+              {orders.map((order, idx) => {
                 const badge = getStatusBadge(order.status);
                 return (
                   <motion.div
-                    key={order.order_id}
+                    key={`order-${order.order_id}-${idx}`}
                     variants={itemVariants}
                     className="bg-white/90 backdrop-blur-sm border border-slate-100 rounded-2xl overflow-hidden shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:shadow-blue-500/10 transition-all duration-300 ease-in-out"
                     role="listitem"
@@ -303,17 +400,29 @@ export default function MyOrdersPage() {
                           Placed on: <span className="font-medium">{new Date(order.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
                         </p>
                       </div>
-                      <span className={badge.className}>
-                        {badge.icon}
-                        {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className={badge.className}>
+                          {badge.icon}
+                          {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                        </span>
+                        <motion.button
+                          onClick={() => handleDownloadInvoice(order.order_id)}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border-2 border-blue-300 px-4 py-2 rounded-lg font-medium transition-colors duration-200"
+                          title="Download Invoice"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span className="hidden sm:inline">Invoice</span>
+                        </motion.button>
+                      </div>
                     </div>
 
                     {/* Items List */}
                     <div className="p-6 space-y-4">
                       {order.items?.map((item) => (
                         <div
-                          key={item.product_id}
+                          key={`${order.order_id}-${item.product_id}`}
                           className="flex items-center gap-4 p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition duration-200"
                         >
                           {/* Product Image */}
@@ -349,13 +458,32 @@ export default function MyOrdersPage() {
                     </div>
 
                     {/* Footer: Total and Payment Mode - Prominent Total */}
-                    <div className="bg-slate-50/70 border-t border-slate-100 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <p className="text-md text-slate-600 font-medium">
-                        Payment Mode: <span className="font-bold text-slate-800">{order.payment_mode}</span>
-                      </p>
-                      <p className="text-xl font-extrabold text-slate-900 border-l-2 border-blue-500 pl-4 sm:pl-6 sm:py-0">
-                        Total Amount: <span className="text-blue-600">₹{order.total_amount}</span>
-                      </p>
+                    <div className="bg-slate-50/70 border-t border-slate-100 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex flex-col gap-2">
+                        <p className="text-md text-slate-600 font-medium">
+                          Payment Mode: <span className="font-bold text-slate-800">{order.payment_mode}</span>
+                        </p>
+                        <p className="text-xl font-extrabold text-slate-900">
+                          Total Amount: <span className="text-blue-600">₹{order.total_amount}</span>
+                        </p>
+                      </div>
+
+                      {/* Cancel Button - Only for pending/processing orders */}
+                      {['pending', 'processing'].includes(order.status) && (
+                        <motion.button
+                          onClick={() => {
+                            setCancellingOrderId(order.order_id);
+                            setShowCancelModal(true);
+                          }}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-700 border-2 border-red-300 px-4 py-2 rounded-lg font-medium transition-colors duration-200"
+                          disabled={cancellingOrderId}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Cancel Order
+                        </motion.button>
+                      )}
                     </div>
                   </motion.div>
                 );
@@ -394,6 +522,77 @@ export default function MyOrdersPage() {
             >
               <ArrowUp className="h-6 w-6" />
             </motion.button>
+          )}
+        </AnimatePresence>
+
+        {/* Cancel Order Modal */}
+        <AnimatePresence>
+          {showCancelModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
+              onClick={() => !cancellingOrderId && setShowCancelModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
+              >
+                <h2 className="text-2xl font-bold text-slate-900 mb-2">Cancel Order?</h2>
+                <p className="text-slate-600 mb-6">
+                  Are you sure you want to cancel this order? If you've paid, a refund will be processed.
+                </p>
+
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Reason for cancellation (optional)
+                  </label>
+                  <textarea
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder="Tell us why you're cancelling..."
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    rows="3"
+                    disabled={cancellingOrderId === 'processing'}
+                  />
+                </div>
+
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => {
+                      setShowCancelModal(false);
+                      setCancelReason('');
+                      setCancellingOrderId(null);
+                    }}
+                    disabled={cancellingOrderId === 'processing'}
+                    className="flex-1 px-4 py-2 border-2 border-slate-300 text-slate-700 font-medium rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  >
+                    Keep Order
+                  </button>
+                  <button
+                    onClick={handleCancelOrder}
+                    disabled={cancellingOrderId === 'processing'}
+                    className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {cancellingOrderId === 'processing' ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Cancelling...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        Cancel Order
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
           )}
         </AnimatePresence>
       </div>

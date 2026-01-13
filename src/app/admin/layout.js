@@ -16,6 +16,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Ticket,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -24,7 +25,9 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 const navigation = [
   { name: 'Dashboard', href: '/admin/admin-dashboard', icon: LayoutDashboard },
   { name: 'Products', href: '/admin/products', icon: Package },
+  { name: 'Categories', href: '/admin/categories', icon: Package },
   { name: 'Orders', href: '/admin/orders', icon: ShoppingCart },
+  { name: 'Coupons', href: '/admin/coupons', icon: Ticket },
   { name: 'Users', href: '/admin/users', icon: Users },
 ];
 
@@ -97,8 +100,12 @@ export default function AdminLayout({ children }) {
         return 'Dashboard';
       case 'products':
         return 'Products';
+      case 'categories':
+        return 'Categories';
       case 'orders':
         return 'Orders';
+      case 'coupons':
+        return 'Coupons & Discounts';
       case 'users':
         return 'Users';
       default:

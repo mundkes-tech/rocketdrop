@@ -19,14 +19,16 @@ export async function GET(req) {
           o.recipient_name,
           o.shipping_address,
           o.phone,
+          o.cancellation_reason,
+          o.cancelled_at,
           o.created_at,
-        o.updated_at,
-        u.name as user_name,
-        u.email as user_email
-      FROM orders o
-      LEFT JOIN users u ON o.user_id = u.id
-      ORDER BY o.created_at DESC
-    `);
+          o.updated_at,
+          u.name as user_name,
+          u.email as user_email
+        FROM orders o
+        LEFT JOIN users u ON o.user_id = u.id
+        ORDER BY o.created_at DESC
+      `);
 
     // Get order items for each order
     const ordersWithItems = await Promise.all(
